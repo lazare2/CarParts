@@ -36,36 +36,29 @@
 
     <!-- ადმინი -->
     <section id="admin" class="panel" hidden>
-      <h2>1. კატეგორიები და ველები</h2>
-      <p class="hint">კატეგორია არის ნაწილის სახეობა (მაგ. ამორტიზატორი). ველები არის ის, რითაც მისი ვარიანტები განსხვავდება (მაგ. ბრენდი, მანქანა, ძრავი).</p>
-      <form id="new-category" class="row">
-        <label>კატეგორიის სახელი <input name="name" required></label>
-        <label>ველები (გამოყავით მძიმით) <input name="fields" placeholder="ბრენდი, მანქანა, ძრავი"></label>
-        <button type="submit">კატეგორიის დამატება</button>
-      </form>
-      <div id="cat-list"></div>
+      <nav class="subnav">
+        <button class="sub active" data-sub="variants">არსებული ვარიანტები</button>
+        <button class="sub" data-sub="categories">კატეგორიები და ველები</button>
+      </nav>
 
-      <h2>2. ვარიანტის დამატება / მარაგის შევსება</h2>
-      <p class="hint">თუ ასეთი ვარიანტი უკვე არსებობს, მარაგი მას დაემატება.</p>
-      <form id="new-variant">
-        <p id="variant-empty" class="empty" hidden>ჯერ დაამატეთ კატეგორია.</p>
-        <div id="variant-form-body">
-          <label class="block">კატეგორია <select id="variant-category"></select></label>
-          <div id="variant-fields" class="pickers"></div>
-          <div class="row">
-            <label>რაოდენობა <input name="quantity" type="number" min="0" step="1" value="1"></label>
-            <label>ჯამური ღირებულება (₾) <input name="cost" type="number" min="0" step="0.01"></label>
-            <button type="submit">დამატება</button>
-          </div>
-        </div>
-      </form>
+      <div id="sub-variants" class="subpanel">
+        <div class="toolbar"><button id="new-variant-btn">+ ახალი ვარიანტი</button></div>
+        <table>
+          <thead><tr><th>ვარიანტი</th><th class="num">რაოდენობა</th><th>შესწორება</th><th></th></tr></thead>
+          <tbody id="admin-body"></tbody>
+        </table>
+        <p id="admin-empty" class="empty" hidden>ვარიანტები ჯერ არ არის.</p>
+      </div>
 
-      <h2>3. არსებული ვარიანტები</h2>
-      <table>
-        <thead><tr><th>ვარიანტი</th><th class="num">რაოდენობა</th><th>მარაგის გაზრდა</th><th>შესწორება</th><th></th></tr></thead>
-        <tbody id="admin-body"></tbody>
-      </table>
-      <p id="admin-empty" class="empty" hidden>ვარიანტები ჯერ არ არის.</p>
+      <div id="sub-categories" class="subpanel" hidden>
+        <p class="hint">კატეგორია არის ნაწილის სახეობა (მაგ. ამორტიზატორი). ველები არის ის, რითაც მისი ვარიანტები განსხვავდება (მაგ. ბრენდი, მანქანა, ძრავი).</p>
+        <form id="new-category" class="row">
+          <label>კატეგორიის სახელი <input name="name" required></label>
+          <label>ველები (გამოყავით მძიმით) <input name="fields" placeholder="ბრენდი, მანქანა, ძრავი"></label>
+          <button type="submit">კატეგორიის დამატება</button>
+        </form>
+        <div id="cat-list"></div>
+      </div>
     </section>
   </main>
 

@@ -333,63 +333,24 @@ $('#new-category').addEventListener('submit', async (e) => {
   }
 });
 
-// ---------- ადმინი: ვარიანტის დამატება ----------
-
-function renderVariantForm() {
-  $('#variant-empty').hidden = catalog.length > 0;
-  $('#variant-form-body').hidden = catalog.length === 0;
-  if (!catalog.length) return;
-  if (!findCat(variantCategory)) variantCategory = catalog[0].id;
-  $('#variant-category').innerHTML = catalog
-    .map((c) => `<option value="${c.id}" ${c.id === variantCategory ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  $('#variant-fields').innerHTML = pickers(findCat(variantCategory));
-}
-
-$('#variant-category').addEventListener('change', (e) => {
-  variantCategory = Number(e.target.value);
-  $('#variant-fields').innerHTML = pickers(findCat(variantCategory));
-});
-
-$('#new-variant').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const quantity = Number(form.quantity.value || 0);
-  const result = await act(
-    () => api('POST', '/api/parts', {
-      category_id: variantCategory,
-      values: collectValues($('#variant-fields')),
-      quantity: form.quantity.value,
-      cost: form.cost.value,
-    }),
-    (r) => (!r.merged ? 'ვარიანტი დაემატა'
-      : quantity > 0 ? 'ასეთი ვარიანტი უკვე არსებობდა — მარაგი გაიზარდა'
-      : 'ასეთი ვარიანტი უკვე არსებობს'));
-  if (result) {
-    form.quantity.value = 1;
-    form.cost.value = '';
-  }
-});
-
 // ---------- ადმინი: არსებული ვარიანტები ----------
 
 function renderVariants() {
   const rows = catalog.flatMap((cat) => cat.parts.map((part) => ({ cat, part, label: partLabel(cat, part) })))
     .sort((a, b) => byText(a.label, b.label));
   $('#admin-empty').hidden = rows.length > 0;
-  $('#admin-body').innerHTML = rows.map(({ cat, part, label }) => `
+  $('#admin-body').innerHTML = rows.map(({ cat, part }) => `
     <tr data-part="${part.id}">
       <td>${esc(cat.name)}${partDetails(cat, part) ? ` <span class="details">${esc(partDetails(cat, part))}</span>` : ''}</td>
       <td class="num">${part.quantity}</td>
       <td><div class="inline">
-        <input class="add-qty" type="number" min="1" step="1" placeholder="რაოდ.">
-        <input class="add-cost" type="number" min="0" step="0.01" placeholder="თანხა ₾">
-        <button data-action="add" title="${esc(label)}">+</button>
-      </div></td>
-      <td><div class="inline">
         <input class="set-qty" type="number" min="0" step="1" value="${part.quantity}">
         <button class="secondary" data-action="set">შესწორება</button>
       </div></td>
-      <td>${cat.fields.length ? '<button class="secondary" data-action="edit">ცვლილება</button>' : ''}</td>
+      <td><div class="inline">
+        <button data-action="stock">მარაგის შევსება</button>
+        ${cat.fields.length ? '<button class="secondary" data-action="edit">ცვლილება</button>' : ''}
+      </div></td>
     </tr>`).join('');
 }
 
@@ -398,14 +359,12 @@ $('#admin-body').addEventListener('click', (e) => {
   if (!action) return;
   const row = e.target.closest('tr');
   const id = row.dataset.part;
-  const val = (sel) => row.querySelector(sel).value;
+  const { cat, part } = findPart(id);
 
-  if (action === 'add')
-    act(() => api('POST', `/api/parts/${id}/add-stock`, { quantity: val('.add-qty'), cost: val('.add-cost') }), 'მარაგი გაიზარდა');
   if (action === 'set')
-    act(() => api('POST', `/api/parts/${id}/set-stock`, { quantity: val('.set-qty') }), 'რაოდენობა შესწორდა');
-  if (action === 'edit') {
-    const { cat, part } = findPart(id);
+    act(() => api('POST', `/api/parts/${id}/set-stock`, { quantity: row.querySelector('.set-qty').value }), 'რაოდენობა შესწორდა');
+  if (action === 'stock') openAddStockDialog(cat, part);
+  if (action === 'edit')
     openDialog({
       title: `${esc(cat.name)} — ვარიანტის შეცვლა`,
       body: `<div class="pickers">${pickers(cat, part.values)}</div>`,
@@ -415,14 +374,74 @@ $('#admin-body').addEventListener('click', (e) => {
         return 'ვარიანტი შეიცვალა';
       },
     });
-  }
 });
+
+function openAddStockDialog(cat, part) {
+  const form = openDialog({
+    title: `${esc(partLabel(cat, part))} <small>(მარაგში: ${part.quantity})</small>`,
+    body: `
+      <label>რამდენი დაემატა
+        <input name="quantity" type="number" min="1" step="1" required></label>
+      <label>ჯამური ღირებულება (₾)
+        <input name="cost" type="number" min="0" step="0.01" required></label>`,
+    submit: 'მარაგის შევსება',
+    async onSubmit(f) {
+      await api('POST', `/api/parts/${part.id}/add-stock`, { quantity: f.elements.quantity.value, cost: f.elements.cost.value });
+      return `მარაგი გაიზარდა: ${partLabel(cat, part)} + ${f.elements.quantity.value}`;
+    },
+  });
+  form.elements.quantity.focus();
+}
+
+// new variant: pick a category, then a value for each of its fields. An existing combination gets the stock added.
+$('#new-variant-btn').addEventListener('click', () => {
+  if (!catalog.length) {
+    showMessage('ჯერ დაამატეთ კატეგორია განყოფილებაში „კატეგორიები და ველები“', false);
+    return;
+  }
+  if (!findCat(variantCategory)) variantCategory = catalog[0].id;
+  const form = openDialog({
+    title: 'ახალი ვარიანტი',
+    body: `
+      <label>კატეგორია
+        <select name="category">
+          ${catalog.map((c) => `<option value="${c.id}" ${c.id === variantCategory ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        </select></label>
+      <div class="pickers" data-pickers>${pickers(findCat(variantCategory))}</div>
+      <label>რაოდენობა <input name="quantity" type="number" min="0" step="1" value="1"></label>
+      <label>ჯამური ღირებულება (₾) <input name="cost" type="number" min="0" step="0.01"></label>
+      <p class="hint">თუ ასეთი ვარიანტი უკვე არსებობს, მარაგი მას დაემატება.</p>`,
+    submit: 'დამატება',
+    async onSubmit(f) {
+      const quantity = Number(f.elements.quantity.value || 0);
+      const result = await api('POST', '/api/parts', {
+        category_id: variantCategory,
+        values: collectValues(f.querySelector('[data-pickers]')),
+        quantity: f.elements.quantity.value,
+        cost: f.elements.cost.value,
+      });
+      if (!result.merged) return 'ვარიანტი დაემატა';
+      return quantity > 0 ? 'ასეთი ვარიანტი უკვე არსებობდა — მარაგი გაიზარდა' : 'ასეთი ვარიანტი უკვე არსებობს';
+    },
+  });
+  form.elements.category.addEventListener('change', (e) => {
+    variantCategory = Number(e.target.value);
+    form.querySelector('[data-pickers]').innerHTML = pickers(findCat(variantCategory));
+  });
+});
+
+// ---------- ადმინი: ქვე-გვერდები ----------
+
+document.querySelectorAll('.sub').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sub').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.subpanel').forEach((p) => (p.hidden = p.id !== `sub-${btn.dataset.sub}`));
+  }));
 
 // ---------- start ----------
 
 function renderAdmin() {
   renderCategories();
-  renderVariantForm();
   renderVariants();
 }
 

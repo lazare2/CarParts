@@ -88,3 +88,13 @@ dialog h3 { margin: 0 0 14px; font-size: 16px; }
 dialog label { display: block; font-size: 13px; color: #616e7c; margin-bottom: 10px; }
 dialog label input { margin-top: 4px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* admin sub-tabs */
+.subnav { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid #e4e7eb; }
+.sub { background: transparent; color: #616e7c; border-radius: 6px 6px 0 0; padding: 9px 16px; border-bottom: 3px solid transparent; }
+.sub:hover { background: #f4f5f7; }
+.sub.active { color: #1f2933; font-weight: 600; border-bottom-color: #2f6fdd; background: transparent; }
+.toolbar { margin-bottom: 12px; }
+#new-category { margin-bottom: 8px; }
+dialog label select { margin-top: 4px; }
+dialog .pickers { margin-bottom: 10px; }
