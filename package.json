@@ -1,0 +1,13 @@
+{
+  "name": "carparts",
+  "version": "1.0.0",
+  "description": "Simple stock and finance tracker for imported car parts",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "private": true
+}

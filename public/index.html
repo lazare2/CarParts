@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ka">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ავტონაწილები</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>ავტონაწილები</h1>
+    <nav>
+      <button class="tab active" data-tab="parts">ნაწილები</button>
+      <button class="tab" data-tab="finance">ფინანსები</button>
+      <button class="tab" data-tab="admin">ადმინი</button>
+    </nav>
+  </header>
+
+  <div id="message" class="message" hidden></div>
+
+  <main>
+    <!-- ნაწილები -->
+    <section id="parts" class="panel">
+      <input id="search" type="search" placeholder="ძებნა...">
+      <table>
+        <thead><tr><th>დასახელება</th><th class="num">დარჩენილია</th><th></th></tr></thead>
+        <tbody id="parts-body"></tbody>
+      </table>
+      <p id="parts-empty" class="empty" hidden>ნაწილები ჯერ არ არის დამატებული. დაამატეთ ადმინის გვერდზე.</p>
+    </section>
+
+    <!-- ფინანსები -->
+    <section id="finance" class="panel" hidden>
+      <div id="finance-body"></div>
+      <p id="finance-empty" class="empty" hidden>გაყიდვები ჯერ არ არის.</p>
+    </section>
+
+    <!-- ადმინი -->
+    <section id="admin" class="panel" hidden>
+      <h2>ახალი ნაწილის დამატება</h2>
+      <form id="new-part" class="row">
+        <label>დასახელება <input name="name" required></label>
+        <label>რაოდენობა <input name="quantity" type="number" min="0" step="1" value="1"></label>
+        <label>ჯამური ღირებულება (₾) <input name="cost" type="number" min="0" step="0.01"></label>
+        <button type="submit">დამატება</button>
+      </form>
+
+      <h2>არსებული ნაწილები</h2>
+      <table>
+        <thead><tr><th>დასახელება</th><th class="num">რაოდენობა</th><th>მარაგის გაზრდა</th><th>შესწორება</th></tr></thead>
+        <tbody id="admin-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
