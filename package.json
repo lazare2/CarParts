@@ -4,7 +4,8 @@
   "description": "Simple stock and finance tracker for imported car parts",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed": "node seed.js"
   },
   "engines": {
     "node": ">=22.13"

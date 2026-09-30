@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ავტონაწილები</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -42,12 +42,15 @@
       </nav>
 
       <div id="sub-variants" class="subpanel">
-        <div class="toolbar"><button id="new-variant-btn">+ ახალი ვარიანტი</button></div>
-        <table>
-          <thead><tr><th>ვარიანტი</th><th class="num">რაოდენობა</th><th>შესწორება</th><th></th></tr></thead>
-          <tbody id="admin-body"></tbody>
-        </table>
+        <div id="variant-stats" class="stats"></div>
+        <div class="toolbar">
+          <input id="variant-search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
+          <button id="toggle-all" class="secondary" hidden>ყველას დაკეცვა</button>
+          <button id="new-variant-btn">+ ახალი ვარიანტი</button>
+        </div>
+        <div id="admin-body"></div>
         <p id="admin-empty" class="empty" hidden>ვარიანტები ჯერ არ არის.</p>
+        <p id="admin-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
       </div>
 
       <div id="sub-categories" class="subpanel" hidden>

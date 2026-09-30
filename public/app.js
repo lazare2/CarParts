@@ -160,7 +160,7 @@ function renderParts() {
           <tbody>${rows.map(({ part, cells }) => `
             <tr>
               ${cells.map((c) => `<td>${c ? esc(c) : '—'}</td>`).join('')}
-              <td class="num ${part.quantity === 0 ? 'zero' : ''}">${part.quantity}</td>
+              <td class="num">${qtyBadge(part.quantity)}</td>
               <td class="num"><button class="sell" data-sell="${part.id}" ${part.quantity === 0 ? 'disabled' : ''}>გაყიდვა</button></td>
             </tr>`).join('')}
           </tbody>
@@ -237,40 +237,48 @@ async function loadFinance() {
 function renderCategories() {
   $('#cat-list').innerHTML = catalog.map((cat) => `
     <details class="card" data-cat="${cat.id}" ${openAdmin.has(cat.id) ? 'open' : ''}>
-      <summary>${esc(cat.name)} <small>(ვარიანტები: ${cat.parts.length})</small></summary>
+      <summary>
+        <span class="card-title">${esc(cat.name)}</span>
+        <span class="card-fields">${cat.fields.map((f) => `<span class="tag">${esc(f.name)}</span>`).join('') || '<span class="hint">ველების გარეშე</span>'}</span>
+        <span class="badge">ვარიანტები: ${cat.parts.length}</span>
+      </summary>
       <div class="card-body">
-        <div class="inline">
-          <input class="cat-name" value="${esc(cat.name)}">
-          <button class="secondary" data-action="cat-rename">სახელის შენახვა</button>
-          <button class="danger" data-action="cat-delete">კატეგორიის წაშლა</button>
+        <div class="card-tools">
+          <input class="cat-name" value="${esc(cat.name)}" aria-label="კატეგორიის სახელი">
+          <button class="sm secondary" data-action="cat-rename">სახელის შენახვა</button>
+          <button class="sm danger" data-action="cat-delete">კატეგორიის წაშლა</button>
         </div>
 
-        <h4>ველები</h4>
-        ${cat.fields.map((f) => `
-          <div class="field" data-field="${f.id}">
-            <div class="inline">
-              <input class="field-name" value="${esc(f.name)}">
-              <button class="secondary" data-action="field-rename">შენახვა</button>
-              <button class="danger" data-action="field-delete">წაშლა</button>
+        <div class="fields-grid">
+          ${cat.fields.map((f) => `
+            <div class="field" data-field="${f.id}">
+              <div class="field-head">
+                <input class="field-name" value="${esc(f.name)}" aria-label="ველის სახელი">
+                <button class="sm secondary" data-action="field-rename">შენახვა</button>
+                <button class="sm danger" data-action="field-delete">წაშლა</button>
+              </div>
+              <div class="chips">
+                ${f.options.map((o) => `
+                  <span class="chip" data-opt="${o.id}" data-value="${esc(o.value)}">${esc(o.value)}
+                    <button class="link" data-action="opt-rename" title="შეცვლა">✎</button><button class="link" data-action="opt-delete" title="წაშლა">×</button>
+                  </span>`).join('') || '<span class="hint">მნიშვნელობები ჯერ არ არის</span>'}
+              </div>
+              <div class="field-add">
+                <input class="opt-new" placeholder="ახალი მნიშვნელობა">
+                <button class="sm" data-action="opt-add">დამატება</button>
+              </div>
+            </div>`).join('')}
+          <div class="field field-new-box">
+            <div class="field-head"><b>ახალი ველი</b></div>
+            <div class="field-add">
+              <input class="field-new" placeholder="მაგ. ძრავი">
+              <button class="sm" data-action="field-add">ველის დამატება</button>
             </div>
-            <div class="chips">
-              ${f.options.map((o) => `
-                <span class="chip" data-opt="${o.id}" data-value="${esc(o.value)}">${esc(o.value)}
-                  <button class="link" data-action="opt-rename" title="შეცვლა">✎</button><button class="link" data-action="opt-delete" title="წაშლა">×</button>
-                </span>`).join('') || '<span class="hint">მნიშვნელობები ჯერ არ არის</span>'}
-            </div>
-            <div class="inline">
-              <input class="opt-new" placeholder="ახალი მნიშვნელობა">
-              <button data-action="opt-add">დამატება</button>
-            </div>
-          </div>`).join('') || '<p class="hint">ამ კატეგორიას ველები არ აქვს — მას ერთი ვარიანტი ექნება.</p>'}
-
-        <div class="inline new-field">
-          <input class="field-new" placeholder="ახალი ველი (მაგ. ძრავი)">
-          <button data-action="field-add">ველის დამატება</button>
+            ${cat.fields.length ? '' : '<p class="hint">ველების გარეშე კატეგორიას ერთი ვარიანტი ექნება.</p>'}
+          </div>
         </div>
       </div>
-    </details>`).join('');
+    </details>`).join('') || '<p class="empty">კატეგორიები ჯერ არ არის.</p>';
 }
 
 $('#cat-list').addEventListener('toggle', (e) => {
@@ -335,34 +343,100 @@ $('#new-category').addEventListener('submit', async (e) => {
 
 // ---------- ადმინი: არსებული ვარიანტები ----------
 
-function renderVariants() {
-  const rows = catalog.flatMap((cat) => cat.parts.map((part) => ({ cat, part, label: partLabel(cat, part) })))
-    .sort((a, b) => byText(a.label, b.label));
-  $('#admin-empty').hidden = rows.length > 0;
-  $('#admin-body').innerHTML = rows.map(({ cat, part }) => `
-    <tr data-part="${part.id}">
-      <td>${esc(cat.name)}${partDetails(cat, part) ? ` <span class="details">${esc(partDetails(cat, part))}</span>` : ''}</td>
-      <td class="num">${part.quantity}</td>
-      <td><div class="inline">
-        <input class="set-qty" type="number" min="0" step="1" value="${part.quantity}">
-        <button class="secondary" data-action="set">შესწორება</button>
-      </div></td>
-      <td><div class="inline">
-        <button data-action="stock">მარაგის შევსება</button>
-        ${cat.fields.length ? '<button class="secondary" data-action="edit">ცვლილება</button>' : ''}
-      </div></td>
-    </tr>`).join('');
+const closedVariants = new Set();   // categories collapsed in the variants list (all open by default)
+
+const stat = (label, value, cls = '') => `<div class="stat ${cls}"><b>${value}</b><span>${label}</span></div>`;
+const qtyBadge = (n) => `<span class="qty ${n === 0 ? 'zero' : n <= 2 ? 'low' : ''}">${n}</span>`;
+
+function updateToggleAll() {
+  const ids = catalog.filter((c) => c.parts.length).map((c) => c.id);
+  $('#toggle-all').textContent = ids.every((id) => closedVariants.has(id)) ? 'ყველას გაშლა' : 'ყველას დაკეცვა';
 }
+
+function renderVariants() {
+  const q = $('#variant-search').value.trim().toLowerCase();
+  const allParts = catalog.flatMap((c) => c.parts);
+  const outOfStock = allParts.filter((p) => p.quantity === 0).length;
+  const lowStock = allParts.filter((p) => p.quantity > 0 && p.quantity <= 2).length;
+  $('#variant-stats').innerHTML =
+    stat('კატეგორია', catalog.length) +
+    stat('ვარიანტი', allParts.length) +
+    stat('სულ მარაგი', allParts.reduce((sum, p) => sum + p.quantity, 0)) +
+    stat('ცოტა დარჩა (1–2)', lowStock, lowStock ? 'warn' : '') +
+    stat('ამოწურულია', outOfStock, outOfStock ? 'bad' : '');
+
+  let html = '';
+  let shown = 0;
+  for (const cat of catalog) {
+    if (!cat.parts.length) continue;
+    const catMatches = cat.name.toLowerCase().includes(q);
+    const rows = cat.parts
+      .map((part) => ({ part, cells: partCells(cat, part) }))
+      .filter((r) => !q || catMatches || r.cells.some((c) => c.toLowerCase().includes(q)))
+      .sort((a, b) => byText(a.cells.join(' '), b.cells.join(' ')));
+    if (!rows.length) continue;
+    shown++;
+
+    const total = cat.parts.reduce((sum, p) => sum + p.quantity, 0);
+    html += `
+      <details class="cat" data-vcat="${cat.id}" ${q || !closedVariants.has(cat.id) ? 'open' : ''}>
+        <summary><span class="cat-name">${esc(cat.name)}</span>
+          <span class="cat-total">ვარიანტები: ${cat.parts.length} · სულ: ${total}</span></summary>
+        <table>
+          <thead><tr>
+            ${cat.fields.map((f) => `<th>${esc(f.name)}</th>`).join('')}
+            <th class="num">რაოდენობა</th><th></th>
+          </tr></thead>
+          <tbody>${rows.map(({ part, cells }) => `
+            <tr data-part="${part.id}">
+              ${cells.map((c) => `<td>${c ? esc(c) : '—'}</td>`).join('')}
+              <td class="num">${qtyBadge(part.quantity)}</td>
+              <td><div class="row-actions">
+                <button class="sm" data-action="stock">მარაგის შევსება</button>
+                <button class="sm secondary" data-action="set">შესწორება</button>
+                ${cat.fields.length ? '<button class="sm secondary" data-action="edit">ცვლილება</button>' : ''}
+              </div></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </details>`;
+  }
+
+  const empties = catalog.filter((c) => !c.parts.length && !q);
+  if (empties.length)
+    html += `<p class="hint">ვარიანტების გარეშე: ${empties.map((c) => `<b>${esc(c.name)}</b>`).join(', ')} — დაამატეთ „+ ახალი ვარიანტი“-თი.</p>`;
+
+  $('#admin-body').innerHTML = html;
+  $('#admin-empty').hidden = allParts.length > 0;
+  $('#admin-nomatch').hidden = !allParts.length || shown > 0;
+  $('#toggle-all').hidden = !shown || !!q;
+  updateToggleAll();
+}
+
+$('#variant-search').addEventListener('input', renderVariants);
+
+$('#toggle-all').addEventListener('click', () => {
+  const ids = catalog.filter((c) => c.parts.length).map((c) => c.id);
+  if (ids.every((id) => closedVariants.has(id))) closedVariants.clear();
+  else ids.forEach((id) => closedVariants.add(id));
+  renderVariants();
+});
+
+// remember which categories were collapsed (ignored while searching, which opens everything)
+$('#admin-body').addEventListener('toggle', (e) => {
+  if ($('#variant-search').value.trim() || !e.target.dataset.vcat) return;
+  const id = Number(e.target.dataset.vcat);
+  if (e.target.open) closedVariants.delete(id); else closedVariants.add(id);
+  updateToggleAll();
+}, true);
 
 $('#admin-body').addEventListener('click', (e) => {
   const action = e.target.dataset.action;
   if (!action) return;
-  const row = e.target.closest('tr');
-  const id = row.dataset.part;
+  const id = e.target.closest('tr').dataset.part;
   const { cat, part } = findPart(id);
 
-  if (action === 'set')
-    act(() => api('POST', `/api/parts/${id}/set-stock`, { quantity: row.querySelector('.set-qty').value }), 'რაოდენობა შესწორდა');
+  if (action === 'set') openSetStockDialog(cat, part);
   if (action === 'stock') openAddStockDialog(cat, part);
   if (action === 'edit')
     openDialog({
@@ -375,6 +449,22 @@ $('#admin-body').addEventListener('click', (e) => {
       },
     });
 });
+
+function openSetStockDialog(cat, part) {
+  const form = openDialog({
+    title: `${esc(partLabel(cat, part))} — რაოდენობის შესწორება`,
+    body: `
+      <p class="hint">ეს მხოლოდ ცვლის მარაგის რიცხვს. ფინანსებზე გავლენა არ აქვს.</p>
+      <label>სწორი რაოდენობა
+        <input name="quantity" type="number" min="0" step="1" value="${part.quantity}" required></label>`,
+    submit: 'შენახვა',
+    async onSubmit(f) {
+      await api('POST', `/api/parts/${part.id}/set-stock`, { quantity: f.elements.quantity.value });
+      return 'რაოდენობა შესწორდა';
+    },
+  });
+  form.elements.quantity.select();
+}
 
 function openAddStockDialog(cat, part) {
   const form = openDialog({
