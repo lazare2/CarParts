@@ -49,16 +49,80 @@ function Copy-AppFiles([string]$dest) {
   Copy-Item $nodeSource (Join-Path $dest 'node.exe') -Force
 }
 
-function New-Shortcut([string]$path, [string]$icon) {
-  $shell = New-Object -ComObject WScript.Shell
-  $lnk = $shell.CreateShortcut($path)
-  $lnk.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-  $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $InstallDir 'CarParts.ps1')`""
-  $lnk.WorkingDirectory = $InstallDir
-  $lnk.IconLocation = "$icon,0"
-  $lnk.WindowStyle = 7
-  $lnk.Description = $appName
-  $lnk.Save()
+# Shortcuts are created through the Windows shell-link interface with Unicode strings. The usual
+# WScript.Shell component converts to the local ANSI code page, which turns Georgian file names
+# into '?????' (and fails) on any PC whose Windows language is not Georgian/UTF-8.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class CpShortcut
+{
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLink { }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+    private interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cch, IntPtr pfd, int fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cch);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cch);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cch);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cch, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+        void Resolve(IntPtr hwnd, int fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("0000010B-0000-0000-C000-000000000046")]
+    private interface IPersistFile
+    {
+        void GetClassID(out Guid pClassID);
+        [PreserveSig] int IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, int dwMode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, [MarshalAs(UnmanagedType.Bool)] bool fRemember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
+        void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
+    }
+
+    public static void Create(string path, string target, string arguments, string workDir, string icon, string description)
+    {
+        IShellLinkW link = (IShellLinkW)new ShellLink();
+        link.SetPath(target);
+        link.SetArguments(arguments);
+        link.SetWorkingDirectory(workDir);
+        link.SetIconLocation(icon, 0);
+        link.SetShowCmd(7);
+        link.SetDescription(description);
+        ((IPersistFile)link).Save(path, true);
+    }
+}
+'@
+
+# $folder\<Georgian name>.lnk; if that ever fails, fall back to the plain ASCII name so the install still works
+function New-Shortcut([string]$folder, [string]$icon) {
+  $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $InstallDir 'CarParts.ps1')`""
+  foreach ($name in "$appName.lnk", 'CarParts.lnk') {
+    try {
+      [CpShortcut]::Create((Join-Path $folder $name), $powershell, $arguments, $InstallDir, $icon, $appName)
+      return
+    } catch {
+      Write-Host "shortcut '$name' failed: $($_.Exception.Message)"
+    }
+  }
+  throw "Could not create a shortcut in $folder"
 }
 
 try {
@@ -93,8 +157,8 @@ try {
   # shortcuts (desktop + start menu) and the entry in Windows "Installed apps"
   $icon = Join-Path $InstallDir 'carparts.ico'
   New-Item -ItemType Directory -Force $DesktopDir, $StartMenuDir | Out-Null
-  New-Shortcut (Join-Path $DesktopDir "$appName.lnk") $icon
-  New-Shortcut (Join-Path $StartMenuDir "$appName.lnk") $icon
+  New-Shortcut $DesktopDir $icon
+  New-Shortcut $StartMenuDir $icon
 
   $version = (Get-Content (Join-Path $InstallDir 'package.json') -Raw | ConvertFrom-Json).version
   $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CarParts'

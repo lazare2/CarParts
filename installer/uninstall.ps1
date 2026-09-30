@@ -19,8 +19,9 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyCon
   Where-Object { $_.ExecutablePath -eq (Join-Path $installDir 'node.exe') } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-Remove-Item (Join-Path $desktopDir "$appName.lnk") -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $startMenuDir "$appName.lnk") -Force -ErrorAction SilentlyContinue
+foreach ($folder in $desktopDir, $startMenuDir) {
+  foreach ($name in "$appName.lnk", 'CarParts.lnk') { Remove-Item -LiteralPath (Join-Path $folder $name) -Force -ErrorAction SilentlyContinue }
+}
 Remove-Item 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CarParts' -Recurse -Force -ErrorAction SilentlyContinue
 
 # this script lives inside the folder, so delete the folder a moment after we exit
