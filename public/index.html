@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ავტონაწილები</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,12 +22,10 @@
   <main>
     <!-- ნაწილები -->
     <section id="parts" class="panel">
-      <input id="search" type="search" placeholder="ძებნა...">
-      <table>
-        <thead><tr><th>დასახელება</th><th class="num">დარჩენილია</th><th></th></tr></thead>
-        <tbody id="parts-body"></tbody>
-      </table>
+      <input id="search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
+      <div id="parts-list"></div>
       <p id="parts-empty" class="empty" hidden>ნაწილები ჯერ არ არის დამატებული. დაამატეთ ადმინის გვერდზე.</p>
+      <p id="parts-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
     </section>
 
     <!-- ფინანსები -->
@@ -37,19 +36,36 @@
 
     <!-- ადმინი -->
     <section id="admin" class="panel" hidden>
-      <h2>ახალი ნაწილის დამატება</h2>
-      <form id="new-part" class="row">
-        <label>დასახელება <input name="name" required></label>
-        <label>რაოდენობა <input name="quantity" type="number" min="0" step="1" value="1"></label>
-        <label>ჯამური ღირებულება (₾) <input name="cost" type="number" min="0" step="0.01"></label>
-        <button type="submit">დამატება</button>
+      <h2>1. კატეგორიები და ველები</h2>
+      <p class="hint">კატეგორია არის ნაწილის სახეობა (მაგ. ამორტიზატორი). ველები არის ის, რითაც მისი ვარიანტები განსხვავდება (მაგ. ბრენდი, მანქანა, ძრავი).</p>
+      <form id="new-category" class="row">
+        <label>კატეგორიის სახელი <input name="name" required></label>
+        <label>ველები (გამოყავით მძიმით) <input name="fields" placeholder="ბრენდი, მანქანა, ძრავი"></label>
+        <button type="submit">კატეგორიის დამატება</button>
+      </form>
+      <div id="cat-list"></div>
+
+      <h2>2. ვარიანტის დამატება / მარაგის შევსება</h2>
+      <p class="hint">თუ ასეთი ვარიანტი უკვე არსებობს, მარაგი მას დაემატება.</p>
+      <form id="new-variant">
+        <p id="variant-empty" class="empty" hidden>ჯერ დაამატეთ კატეგორია.</p>
+        <div id="variant-form-body">
+          <label class="block">კატეგორია <select id="variant-category"></select></label>
+          <div id="variant-fields" class="pickers"></div>
+          <div class="row">
+            <label>რაოდენობა <input name="quantity" type="number" min="0" step="1" value="1"></label>
+            <label>ჯამური ღირებულება (₾) <input name="cost" type="number" min="0" step="0.01"></label>
+            <button type="submit">დამატება</button>
+          </div>
+        </div>
       </form>
 
-      <h2>არსებული ნაწილები</h2>
+      <h2>3. არსებული ვარიანტები</h2>
       <table>
-        <thead><tr><th>დასახელება</th><th class="num">რაოდენობა</th><th>მარაგის გაზრდა</th><th>შესწორება</th></tr></thead>
+        <thead><tr><th>ვარიანტი</th><th class="num">რაოდენობა</th><th>მარაგის გაზრდა</th><th>შესწორება</th><th></th></tr></thead>
         <tbody id="admin-body"></tbody>
       </table>
+      <p id="admin-empty" class="empty" hidden>ვარიანტები ჯერ არ არის.</p>
     </section>
   </main>
 

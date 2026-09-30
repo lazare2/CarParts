@@ -43,6 +43,45 @@ button.sell:hover { background: #187a43; }
 .profit { color: #14532d; }
 .loss { color: #b8322a; }
 
+.hint { color: #7b8794; font-size: 13px; margin: 0 0 10px; }
+.details { display: block; color: #616e7c; font-size: 13px; margin-top: 2px; }
+label.block { display: block; font-size: 13px; color: #616e7c; margin-bottom: 10px; }
+select { padding: 8px; border: 1px solid #cbd2d9; border-radius: 6px; font-size: 14px; width: 100%; background: #fff; }
+label.block select { margin-top: 4px; max-width: 320px; }
+button.danger { background: #fbdcda; color: #7f1d1d; }
+button.danger:hover { background: #f5b5b0; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.link { background: none; color: #616e7c; padding: 0 3px; font-size: 14px; }
+button.link:hover { background: none; color: #1f2933; }
+
+/* ნაწილები: one block per category */
+details.cat { border: 1px solid #e4e7eb; border-radius: 8px; margin-bottom: 10px; }
+details.cat > summary { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; cursor: pointer; font-weight: 600; }
+details.cat[open] > summary { border-bottom: 1px solid #e4e7eb; background: #f8f9fa; border-radius: 8px 8px 0 0; }
+.cat-total { font-weight: normal; color: #616e7c; font-size: 14px; }
+details.cat table { margin: 0; }
+details.cat th, details.cat td { padding: 10px 14px; }
+details.cat tr:last-child td { border-bottom: 0; }
+
+/* admin: category cards */
+details.card { border: 1px solid #e4e7eb; border-radius: 8px; margin: 8px 0; }
+details.card > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; }
+details.card small { font-weight: normal; color: #7b8794; }
+.card-body { padding: 4px 14px 14px; }
+.card-body h4 { margin: 16px 0 8px; font-size: 14px; }
+.field { background: #f8f9fa; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+.field .inline { margin-bottom: 8px; }
+.field .inline input { width: 100%; max-width: 260px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip { background: #e4e7eb; border-radius: 14px; padding: 3px 6px 3px 10px; font-size: 13px; }
+.new-field input, .card-body > .inline input { max-width: 260px; width: 100%; }
+.pickers { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.picker { display: flex; flex-direction: column; gap: 4px; min-width: 180px; flex: 1; }
+.picker label { font-size: 13px; color: #616e7c; }
+.picker label select { margin-top: 4px; }
+.dlg-error { color: #7f1d1d; background: #fbdcda; padding: 8px 10px; border-radius: 6px; font-size: 14px; margin: 0; }
+dialog .pickers { flex-direction: column; }
+
 dialog { border: 0; border-radius: 8px; padding: 22px; width: min(360px, 92vw); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
 dialog::backdrop { background: rgba(0,0,0,.35); }
 dialog h3 { margin: 0 0 14px; font-size: 16px; }
