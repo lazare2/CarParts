@@ -12,6 +12,8 @@
     <h1>ავტონაწილები</h1>
     <nav>
       <button class="tab active" data-tab="parts">ნაწილები</button>
+      <button class="tab" data-tab="containers">კონტეინერები</button>
+      <button class="tab" data-tab="referrers">ხელოსნები</button>
       <button class="tab" data-tab="finance">ფინანსები</button>
       <button class="tab" data-tab="admin">ადმინი</button>
     </nav>
@@ -20,24 +22,52 @@
   <div id="message" class="message" hidden></div>
 
   <main>
-    <!-- ნაწილები -->
+    <!-- ნაწილები: what is in stock -->
     <section id="parts" class="panel">
       <input id="search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
       <div id="parts-list"></div>
-      <p id="parts-empty" class="empty" hidden>ნაწილები ჯერ არ არის დამატებული. დაამატეთ ადმინის გვერდზე.</p>
+      <p id="parts-empty" class="empty" hidden>მარაგი ჯერ ცარიელია. ნაწილები ემატება <b>კონტეინერები</b> გვერდიდან.</p>
       <p id="parts-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
+    </section>
+
+    <!-- კონტეინერები -->
+    <section id="containers" class="panel" hidden>
+      <div id="containers-list-view">
+        <div class="toolbar">
+          <h2 class="grow">კონტეინერები</h2>
+          <button id="new-container-btn">+ ახალი კონტეინერი</button>
+        </div>
+        <div id="container-cards" class="card-grid"></div>
+        <p id="containers-empty" class="empty" hidden>კონტეინერები ჯერ არ არის. დაიწყეთ „+ ახალი კონტეინერი“-თი.</p>
+      </div>
+      <div id="container-detail" hidden></div>
+    </section>
+
+    <!-- ხელოსნები -->
+    <section id="referrers" class="panel" hidden>
+      <div id="referrers-list-view">
+        <div class="toolbar">
+          <h2 class="grow">ხელოსნები</h2>
+          <button id="new-referrer-btn">+ ახალი ხელოსანი</button>
+        </div>
+        <div id="referrer-stats" class="stats"></div>
+        <div id="referrer-table" class="table-wrap"></div>
+        <p id="referrers-empty" class="empty" hidden>ხელოსნები ჯერ არ არის. დაამატეთ ის ხელოსნები, ვინც თქვენთან მყიდველებს აგზავნის.</p>
+      </div>
+      <div id="referrer-detail" hidden></div>
     </section>
 
     <!-- ფინანსები -->
     <section id="finance" class="panel" hidden>
+      <div id="finance-totals" class="stats"></div>
       <div id="finance-body"></div>
-      <p id="finance-empty" class="empty" hidden>გაყიდვები ჯერ არ არის.</p>
+      <p id="finance-empty" class="empty" hidden>ჯერ არაფერია: არც კონტეინერები, არც გაყიდვები.</p>
     </section>
 
     <!-- ადმინი -->
     <section id="admin" class="panel" hidden>
       <nav class="subnav">
-        <button class="sub active" data-sub="variants">არსებული ვარიანტები</button>
+        <button class="sub active" data-sub="variants">ნაწილის სახეობები</button>
         <button class="sub" data-sub="categories">კატეგორიები და ველები</button>
       </nav>
 
@@ -46,10 +76,10 @@
         <div class="toolbar">
           <input id="variant-search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
           <button id="toggle-all" class="secondary" hidden>ყველას დაკეცვა</button>
-          <button id="new-variant-btn">+ ახალი ვარიანტი</button>
         </div>
+        <p class="hint">ახალი ნაწილები ემატება კონტეინერებიდან. აქ შეგიძლიათ შეცვალოთ, რა წერია ნაწილზე.</p>
         <div id="admin-body"></div>
-        <p id="admin-empty" class="empty" hidden>ვარიანტები ჯერ არ არის.</p>
+        <p id="admin-empty" class="empty" hidden>ნაწილები ჯერ არ არის.</p>
         <p id="admin-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
       </div>
 
@@ -65,6 +95,16 @@
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <!-- basket: shown while it has parts -->
+  <div id="basket-bar" hidden>
+    <div class="basket-inner">
+      <b id="basket-count"></b>
+      <div id="basket-list" class="chips"></div>
+      <button id="basket-clear" class="secondary sm">გასუფთავება</button>
+      <button id="basket-checkout" class="sell">გაყიდვის გაფორმება</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

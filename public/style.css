@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root {
   --bg: #f3f4f6;
   --panel: #fff;
@@ -153,3 +154,93 @@ dialog label input, dialog label select { margin-top: 4px; }
   .card-title { min-width: 0; }
   details.card > summary { flex-wrap: wrap; }
 }
+
+/* ---------- version 2: containers, basket, repairmen ---------- */
+.muted { color: var(--muted); font-weight: normal; }
+.grow { flex: 1; }
+h2.grow { margin: 0; }
+h3 { font-size: 15px; margin: 22px 0 10px; }
+.table-wrap { overflow-x: auto; }
+td.lots { font-size: 13px; color: var(--muted); }
+td.lots b { color: var(--text); }
+.tag.bad { background: var(--red-bg); color: var(--red); }
+.stat.good { background: #dcfce7; border-color: #bbf7d0; }
+.stat.good b { color: #15803d; }
+.stat b small { font-size: 12px; font-weight: normal; }
+.stats.small .stat { padding: 8px 12px; }
+.stats.small .stat b { font-size: 17px; }
+label.check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; }
+label.check input { width: auto; margin: 0; }
+fieldset.radios { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; }
+fieldset.radios legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+fieldset.radios label.check { margin: 4px 0; }
+
+/* money: amount + currency, and the exchange rate when it is dollars */
+.money-row { display: flex; gap: 6px; margin-top: 4px; }
+.money-row input { flex: 1; }
+.money-row select { width: auto; }
+dialog .money-row input, dialog .money-row select { margin-top: 0; }
+.money .hint { margin-top: -4px; }
+
+/* container cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.ccard { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; background: var(--panel); }
+.ccard:hover, .ccard:focus { border-color: var(--primary); outline: none; box-shadow: 0 2px 8px rgba(37, 99, 235, .12); }
+.ccard-head { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; }
+.ccard .units { font-size: 13px; }
+.progress { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.progress span { display: block; height: 100%; background: var(--green); border-radius: 999px; }
+
+.detail-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.detail-head h2 { margin: 0; }
+.add-box { background: var(--soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+.add-box h3 { margin: 0 0 10px; }
+.add-box .hint { margin: 8px 0 0; }
+.add-grid { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.add-grid > label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 120px; }
+.add-grid > label:first-child { min-width: 170px; }
+.add-grid .pickers { flex-direction: row; flex-wrap: wrap; margin: 0; gap: 12px; }
+.add-grid .picker { min-width: 170px; }
+.add-grid input[name=quantity], .add-grid input[name=damaged] { width: 110px; }
+details.history { margin-top: 18px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+details.history summary { cursor: pointer; font-weight: 600; }
+
+/* basket */
+main { padding-bottom: 90px; }
+#basket-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #111827; color: #fff; z-index: 10; box-shadow: 0 -4px 16px rgba(0, 0, 0, .2); }
+.basket-inner { max-width: 1040px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 12px; }
+#basket-list { flex: 1; flex-wrap: nowrap; overflow-x: auto; min-width: 0; }
+#basket-bar .chip { white-space: nowrap; }
+#basket-bar .chip { background: #1f2937; border-color: #374151; color: #fff; }
+#basket-bar .chip button.link { color: #9ca3af; }
+
+dialog.wide { width: min(1000px, 96vw); }
+.checkout-head { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.checkout-head label { flex: 1; min-width: 150px; margin: 0; }
+table.checkout td, table.checkout th { padding: 8px 6px; }
+table.checkout input, table.checkout select { margin: 0; }
+table.checkout .qty { width: 70px; }
+table.checkout .pct { width: 70px; }
+table.checkout .price { min-width: 110px; }
+table.checkout .src { min-width: 170px; }
+table.checkout .unit { font-size: 12px; margin: 2px 0 0; white-space: nowrap; }
+table.checkout tfoot th { background: var(--soft); color: var(--text); font-size: 14px; }
+table.checkout.no-ref .ref-col { display: none; }
+
+/* finance receipts */
+.receipt { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow-x: auto; }
+.receipt-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 8px 14px; background: var(--soft); border-bottom: 1px solid var(--border); font-size: 14px; }
+.receipt table td { padding: 8px 14px; }
+.receipt tr:last-child td { border-bottom: 0; }
+tr.return-row td { color: var(--red); }
+tr.inactive td { color: var(--muted); }
+
+td.num, th.num { white-space: nowrap; }
+.stat b { white-space: nowrap; }
+.lots-table .row-actions { flex-wrap: wrap; min-width: 150px; }
+.receipt table { table-layout: fixed; min-width: 640px; }
+.receipt td:nth-child(2) { width: 70px; }
+.receipt td:nth-child(3) { width: 110px; }
+.receipt td:nth-child(4) { width: 140px; }
+.receipt td:nth-child(5) { width: 190px; }
+.receipt td:nth-child(6) { width: 120px; text-align: right; }

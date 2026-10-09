@@ -1,11 +1,20 @@
 # CarParts (ავტონაწილები)
 
-Simple stock and finance tracker for imported car parts. Runs locally on Windows, keeps everything in one
-database file, no internet needed.
+Stock, container and sales tracker for car parts imported in containers. Runs locally on Windows, keeps
+everything in one database file, no internet needed.
 
-- **ნაწილები** – stock grouped by category (e.g. ამორტიზატორი) with a **გაყიდვა** button per variant
-- **ფინანსები** – what was sold each month, what was bought, and the difference
-- **ადმინი** – variants (add stock, correct, change), categories and their fields (brand, car, engine, ...)
+- **ნაწილები** – what is in stock (good units only), per category, with how many came from each container;
+  add parts to the basket and sell several at once
+- **კონტეინერები** – each shipment with its total price (₾, or $ with the exchange rate). Parts are recorded
+  per container, damaged units are kept apart (and can still be sold as damaged). Shows how much of the
+  container price has come back and the profit
+- **ხელოსნები** – repairmen who send customers: commission % per sold part, totals per month, payments made
+  and what is still owed
+- **ფინანსები** – per month: sales (as receipts), returns, commissions, containers bought, result; returns and
+  cancelling a mistaken sale happen here
+- **ადმინი** – part types, categories and their fields (brand, car, engine, ...)
+
+Money can be entered in ₾ or $ (with the rate of the day); everything is shown in ₾.
 
 ## Install (desktop icon)
 

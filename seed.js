@@ -1,54 +1,51 @@
-// Fills the database with fake demo data:  npm run seed   (or: node seed.js)
-// Refuses to run if any parts already exist. To start over: stop the server and delete data/carparts.db
+// Fills an EMPTY database with fake demo data (containers, sales, repairmen):  npm run seed
+// It goes through the same rules as the app (api/), so the numbers are consistent.
+// Refuses to run if any container exists. To start over: stop the app and delete the database file.
 import { db } from './db.js';
+import { dispatch } from './api/index.js';
 
-if (db.prepare('SELECT COUNT(*) AS n FROM parts').get().n > 0) {
-  console.log('ბაზაში უკვე არის ნაწილები — დემო მონაცემები არ დაემატა.');
+if (db.prepare('SELECT COUNT(*) AS n FROM containers').get().n > 0) {
+  console.log('ბაზაში უკვე არის კონტეინერები — დემო მონაცემები არ დაემატა.');
   process.exit(1);
 }
 
-// each variant: [values in field order, unit cost in ₾]
+// each variant: [values in field order, rough value of one unit in ₾]
 const DEMO = [
-  { name: 'ამორტიზატორი', fields: ['ბრენდი', 'ძრავი'], variants: [
-    [['KYB', '2.5'], 95], [['Sachs', '2.0'], 110], [['Bilstein', '2.5'], 165], [['ჰონდა', '1.8'], 130]] },
+  { name: 'ამორტიზატორი', fields: ['ბრენდი', 'მანქანა'], variants: [
+    [['KYB', 'Toyota Camry 2.5'], 180], [['Sachs', 'Hyundai Sonata 2.0'], 200], [['Bilstein', 'BMW 320i'], 320], [['KYB', 'Toyota Prius 1.8'], 170]] },
   { name: 'ბრეკის ხუნდი', fields: ['ბრენდი', 'მანქანა', 'პოზიცია'], variants: [
-    [['Brembo', 'Toyota Camry 2.5', 'წინა'], 70], [['Brembo', 'Toyota Camry 2.5', 'უკანა'], 55],
-    [['TRW', 'Honda Civic 1.8', 'წინა'], 48], [['Bosch', 'Hyundai Sonata 2.0', 'წინა'], 52]] },
+    [['Brembo', 'Toyota Camry 2.5', 'წინა'], 120], [['Brembo', 'Toyota Camry 2.5', 'უკანა'], 95],
+    [['TRW', 'Honda Civic 1.8', 'წინა'], 85], [['Bosch', 'Hyundai Sonata 2.0', 'წინა'], 90]] },
   { name: 'ბრეკის დისკი', fields: ['ბრენდი', 'მანქანა', 'პოზიცია'], variants: [
-    [['Brembo', 'Toyota Camry 2.5', 'წინა'], 140], [['ATE', 'BMW 320i', 'წინა'], 175], [['ATE', 'BMW 320i', 'უკანა'], 130]] },
-  { name: 'ზეთის ფილტრი', fields: ['ბრენდი', 'ძრავი'], variants: [
-    [['Mann', '2.0'], 12], [['Mann', '2.5'], 14], [['Bosch', '1.8'], 11], [['Toyota', '2.5'], 18]] },
-  { name: 'ჰაერის ფილტრი', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Mann', 'Toyota Camry 2.5'], 24], [['Mahle', 'Honda Civic 1.8'], 22], [['Bosch', 'Nissan Rogue 2.5'], 26]] },
-  { name: 'სალონის ფილტრი', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Mann', 'Toyota Prius 1.8'], 18], [['Bosch', 'Hyundai Sonata 2.0'], 16], [['Mann', 'Ford Fusion 2.5'], 17]] },
-  { name: 'საწვავის ფილტრი', fields: ['ბრენდი', 'ძრავი'], variants: [
-    [['Bosch', '2.0'], 28], [['Mann', '2.5'], 30]] },
-  { name: 'სანთელი', fields: ['ბრენდი', 'ძრავი'], variants: [
-    [['NGK', '1.8'], 9], [['NGK', '2.5'], 10], [['Denso', '2.0'], 11], [['Bosch', '2.5'], 12]] },
-  { name: 'აკუმულატორი', fields: ['ბრენდი', 'ტევადობა'], variants: [
-    [['Varta', '60Ah'], 150], [['Varta', '75Ah'], 185], [['Bosch', '70Ah'], 170]] },
-  { name: 'ძრავის ზეთი', fields: ['ბრენდი', 'სიბლანტე', 'მოცულობა'], variants: [
-    [['Castrol', '5W-30', '4ლ'], 55], [['Castrol', '5W-40', '5ლ'], 68], [['Mobil', '5W-30', '4ლ'], 52], [['Shell', '10W-40', '4ლ'], 44]] },
-  { name: 'საქარე მინის საწმენდი', fields: ['ბრენდი', 'ზომა'], variants: [
-    [['Bosch', '55სმ'], 14], [['Bosch', '60სმ'], 16], [['Valeo', '50სმ'], 13]] },
-  { name: 'რადიატორი', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Nissens', 'Toyota Camry 2.5'], 210], [['Valeo', 'Hyundai Sonata 2.0'], 195]] },
-  { name: 'წყლის ტუმბო', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Gates', 'Toyota Camry 2.5'], 65], [['SKF', 'Ford Fusion 2.5'], 72], [['Gates', 'Honda Civic 1.8'], 58]] },
-  { name: 'ბურთულა სახსარი', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Lemförder', 'Mercedes E220'], 60], [['Lemförder', 'BMW 320i'], 58], [['555', 'Toyota Camry 2.5'], 24]] },
-  { name: 'ჰაბის საკისარი', fields: ['ბრენდი', 'მანქანა', 'პოზიცია'], variants: [
-    [['SKF', 'Toyota Camry 2.5', 'წინა'], 85], [['SKF', 'Toyota Camry 2.5', 'უკანა'], 78], [['FAG', 'Honda Civic 1.8', 'წინა'], 80]] },
+    [['Brembo', 'Toyota Camry 2.5', 'წინა'], 240], [['ATE', 'BMW 320i', 'წინა'], 300]] },
   { name: 'ფარი', fields: ['მანქანა', 'მხარე'], variants: [
-    [['Toyota Camry 2.5', 'მარცხენა'], 260], [['Toyota Camry 2.5', 'მარჯვენა'], 260],
-    [['Honda Civic 1.8', 'მარცხენა'], 230], [['Honda Civic 1.8', 'მარჯვენა'], 230]] },
-  { name: 'ძრავის ღვედი', fields: ['ბრენდი', 'მანქანა'], variants: [
-    [['Gates', 'Nissan Rogue 2.5'], 34], [['Contitech', 'Toyota Prius 1.8'], 29]] },
+    [['Toyota Camry 2.5', 'მარცხენა'], 450], [['Toyota Camry 2.5', 'მარჯვენა'], 450], [['Honda Civic 1.8', 'მარცხენა'], 380]] },
+  { name: 'გენერატორი', fields: ['მანქანა', 'ძრავი'], variants: [
+    [['Toyota Camry', '2.5'], 350], [['Hyundai Sonata', '2.0'], 320]] },
+  { name: 'სარკე', fields: ['მანქანა', 'მხარე'], variants: [
+    [['Toyota Prius', 'მარცხენა'], 160], [['Toyota Prius', 'მარჯვენა'], 160], [['Ford Fusion', 'მარცხენა'], 140]] },
+  { name: 'რადიატორი', fields: ['მანქანა'], variants: [[['Toyota Camry 2.5'], 260], [['Hyundai Sonata 2.0'], 240]] },
+  { name: 'ბამპერი', fields: ['მანქანა', 'პოზიცია', 'ფერი'], variants: [
+    [['Toyota Camry 2018', 'წინა', 'თეთრი'], 520], [['Toyota Camry 2018', 'უკანა', 'შავი'], 480], [['Ford Fusion 2016', 'წინა', 'ვერცხლისფერი'], 450]] },
+  { name: 'სტარტერი', fields: ['მანქანა'], variants: [[['Honda Civic 1.8'], 210], [['Nissan Rogue 2.5'], 230]] },
+  { name: 'კარი', fields: ['მანქანა', 'პოზიცია', 'ფერი'], variants: [
+    [['Toyota Prius 2016', 'წინა მარცხენა', 'თეთრი'], 600], [['Hyundai Sonata 2017', 'უკანა მარჯვენა', 'შავი'], 550]] },
+];
+
+const CONTAINERS = [
+  { name: 'MSKU 3820415', daysAgo: 85, cost: { amount: 9500, currency: 'USD', rate: 2.71 } },
+  { name: 'TCLU 5527103', daysAgo: 50, cost: { amount: 11000, currency: 'USD', rate: 2.69 } },
+  { name: 'CMAU 7710342', daysAgo: 12, cost: { amount: 24000, currency: 'GEL' } },
+];
+
+const REFERRERS = [
+  { name: 'გიორგი — ავტოსერვისი ვაკე', phone: '599 12 34 56', default_pct: 10 },
+  { name: 'ლევანი — Tbilisi Motors', phone: '577 98 76 54', default_pct: 7 },
+  { name: 'დათო (დიდუბე)', phone: '555 44 33 22', default_pct: '' },
 ];
 
 // small deterministic random generator so the demo data is the same every time
-let seed = 20260930;
+let seed = 20261009;
 const rnd = () => {
   seed = (seed + 0x6d2b79f5) | 0;
   let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -56,6 +53,7 @@ const rnd = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const int = (min, max) => min + Math.floor(rnd() * (max - min + 1));
+const pick = (list) => list[Math.floor(rnd() * list.length)];
 
 function daysAgo(n) {
   const d = new Date();
@@ -64,67 +62,81 @@ function daysAgo(n) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-const q = {
-  category: db.prepare('SELECT id FROM categories WHERE name = ?'),
-  addCategory: db.prepare('INSERT INTO categories (name) VALUES (?)'),
-  field: db.prepare('SELECT id FROM fields WHERE category_id = ? AND name = ?'),
-  addField: db.prepare('INSERT INTO fields (category_id, name) VALUES (?, ?)'),
-  option: db.prepare('SELECT id FROM field_options WHERE field_id = ? AND value = ?'),
-  addOption: db.prepare('INSERT INTO field_options (field_id, value) VALUES (?, ?)'),
-  addPart: db.prepare('INSERT INTO parts (category_id, signature, quantity) VALUES (?, ?, ?)'),
-  addValue: db.prepare('INSERT INTO part_values (part_id, field_id, option_id) VALUES (?, ?, ?)'),
-  addPurchase: db.prepare('INSERT INTO purchases (part_id, quantity, total_cost, date) VALUES (?, ?, ?, ?)'),
-  addSale: db.prepare('INSERT INTO sales (part_id, quantity, total_price, date) VALUES (?, ?, ?, ?)'),
-};
-
-const findOrAdd = (find, add, ...args) => find.get(...args)?.id ?? Number(add.run(...args).lastInsertRowid);
-
-let categories = 0, variants = 0, purchases = 0, sales = 0;
+const call = (method, path, body) => dispatch(method, path, body);
 
 db.exec('BEGIN');
 try {
+  // categories
+  for (const c of DEMO) call('POST', '/api/categories', { name: c.name, fields: c.fields });
+  const catalog = call('GET', '/api/catalog');
+  const catByName = new Map(catalog.categories.map((c) => [c.name, c]));
+
+  // containers and their contents (most parts arrive in one or two containers)
+  const unitValue = new Map();
+  const containers = CONTAINERS.map((c) => ({
+    ...c, date: daysAgo(c.daysAgo),
+    id: call('POST', '/api/containers', { name: c.name, arrival_date: daysAgo(c.daysAgo), cost: c.cost }).id,
+  }));
   for (const def of DEMO) {
-    const existed = q.category.get(def.name);
-    const categoryId = findOrAdd(q.category, q.addCategory, def.name);
-    if (!existed) categories++;
-    const fieldIds = def.fields.map((name) => findOrAdd(q.field, q.addField, categoryId, name));
-    // the category may already have been created by hand: it must have exactly these fields
-    const dbFields = db.prepare('SELECT id FROM fields WHERE category_id = ? ORDER BY id').all(categoryId).map((f) => f.id);
-    if (dbFields.length !== fieldIds.length) throw new Error(`კატეგორიას „${def.name}“ სხვა ველები აქვს, ვიდრე დემო მონაცემებს`);
-
-    for (const [values, unitCost] of def.variants) {
-      const optionIds = values.map((v, i) => findOrAdd(q.option, q.addOption, fieldIds[i], v));
-      const signature = fieldIds.map((f, i) => `${f}:${optionIds[i]}`).join(',');
-      const partId = Number(q.addPart.run(categoryId, signature, 0).lastInsertRowid);
-      fieldIds.forEach((f, i) => q.addValue.run(partId, f, optionIds[i]));
-      variants++;
-
-      // first purchase 2-3 months ago, sometimes a second one last month
-      const firstQty = int(4, 14);
-      q.addPurchase.run(partId, firstQty, Math.round(unitCost * firstQty * (0.95 + rnd() * 0.1)), daysAgo(int(60, 88)));
-      purchases++;
-      let stock = firstQty;
-      if (rnd() < 0.5) {
-        const more = int(2, 8);
-        q.addPurchase.run(partId, more, Math.round(unitCost * more * (0.95 + rnd() * 0.1)), daysAgo(int(3, 30)));
-        purchases++;
-        stock += more;
+    const cat = catByName.get(def.name);
+    for (const [values, unit] of def.variants) {
+      const into = containers.filter(() => rnd() < 0.55);
+      if (!into.length) into.push(pick(containers));
+      for (const c of into) {
+        const quantity = int(2, 10);
+        const damaged = rnd() < 0.2 ? int(1, Math.min(2, quantity)) : 0;
+        const body = {
+          category_id: cat.id, quantity, damaged, date: c.date,
+          values: Object.fromEntries(cat.fields.map((f, i) => [f.id, { new_value: values[i] }])),
+        };
+        unitValue.set(call('POST', `/api/containers/${c.id}/items`, body).part_id, unit);
       }
+    }
+  }
 
-      // a few sales; some variants sell out completely, some run low
-      let available = firstQty;
-      const sell = (qty) => {
-        q.addSale.run(partId, qty, Math.round(unitCost * qty * (1.25 + rnd() * 0.35)), daysAgo(int(0, 55)));
-        sales++;
-        stock -= qty;
-      };
-      for (let s = int(0, 3); s > 0 && available > 0; s--) {
-        const qty = Math.min(int(1, 3), available);
-        sell(qty);
-        available -= qty;
-      }
-      if (rnd() < 0.06 && stock > 0) sell(stock);
-      db.prepare('UPDATE parts SET quantity = ? WHERE id = ?').run(stock, partId);
+  const referrers = REFERRERS.map((r) => call('POST', '/api/referrers', r).id);
+
+  // sales, day by day: only from containers that had already arrived
+  const lotsArrived = (day) => {
+    const cat = call('GET', '/api/catalog');
+    const arrived = new Set(cat.containers.filter((c) => c.arrival_date <= day).map((c) => c.id));
+    return cat.categories.flatMap((c) => c.parts).flatMap((p) => p.lots
+      .filter((l) => arrived.has(l.container_id) && l.good > 0)
+      .map((l) => ({ ...l, part_id: p.id })));
+  };
+  for (let ago = 80; ago >= 0; ago--) {
+    if (rnd() > 0.55) continue;
+    const day = daysAgo(ago);
+    const lots = lotsArrived(day);
+    if (!lots.length) continue;
+    const referrer = rnd() < 0.45 ? pick(referrers) : null;
+    const pct = referrer ? pick([5, 7, 10, 10, 12]) : 0;
+    const chosen = new Map();
+    for (let n = int(1, 3); n > 0; n--) { const l = pick(lots); chosen.set(l.id, l); }
+    const items = [...chosen.values()].map((l) => {
+      const quantity = Math.min(l.good, rnd() < 0.8 ? 1 : 2);
+      return { lot_id: l.id, quantity, price: Math.round(unitValue.get(l.part_id) * quantity * (0.8 + rnd() * 0.5)), commission_pct: pct };
+    });
+    call('POST', '/api/sales', { date: day, referrer_id: referrer, items });
+  }
+
+  // a few damaged discoveries and returns
+  for (const l of lotsArrived(daysAgo(0)).slice(0, 3)) call('POST', `/api/lots/${l.id}/damage`, { quantity: 1, date: daysAgo(int(1, 20)), note: 'შემოწმებისას აღმოჩნდა' });
+  const soldItems = db.prepare(`SELECT si.id, si.price_gel, si.quantity, s.date FROM sale_items si JOIN sales s ON s.id = si.sale_id
+    WHERE s.referrer_id IS NOT NULL ORDER BY si.id LIMIT 3`).all();
+  soldItems.forEach((it, i) => call('POST', `/api/sale-items/${it.id}/return`, {
+    quantity: 1, condition: i === 1 ? 'good' : 'damaged', date: it.date,
+    refund: { amount: Math.round(it.price_gel / it.quantity), currency: 'GEL' }, note: i === 1 ? 'არ მოერგო' : 'მყიდველმა დაზიანებული დააბრუნა',
+  }));
+
+  // repairmen are paid for every month before the current one
+  const thisMonth = daysAgo(0).slice(0, 7);
+  for (const id of referrers) {
+    for (const m of call('GET', `/api/referrers/${id}`).months) {
+      if (m.month >= thisMonth || m.earned <= 0) continue;
+      const [y, mo] = m.month.split('-').map(Number);
+      const payDay = `${mo === 12 ? y + 1 : y}-${String(mo === 12 ? 1 : mo + 1).padStart(2, '0')}-03`;
+      call('POST', `/api/referrers/${id}/payments`, { amount: { amount: m.earned, currency: 'GEL' }, date: payDay, note: `${m.month} საკომისიო` });
     }
   }
   db.exec('COMMIT');
@@ -133,4 +145,6 @@ try {
   throw err;
 }
 
-console.log(`დაემატა: ${categories} ახალი კატეგორია, ${variants} ვარიანტი, ${purchases} შესყიდვა, ${sales} გაყიდვა.`);
+const count = (t) => db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
+console.log(`დაემატა: ${count('containers')} კონტეინერი, ${count('lots')} ნაწილი კონტეინერებში, ${count('sales')} გაყიდვა, ` +
+  `${count('referrers')} ხელოსანი, ${count('returns')} დაბრუნება.`);

@@ -15,8 +15,27 @@ db.exec('PRAGMA foreign_keys = ON');
 // category  (ამორტიზატორი)
 //   └─ fields   (ბრენდი, მანქანა, ძრავი ...)   defined per category in the admin tab
 //        └─ options (Bilstein, Sachs ...)       the allowed values of each field
-// part = one variant of a category: one option chosen for every field, with its own stock.
+// part = one variant of a category: one option chosen for every field.
 //   `signature` is the chosen options as text, so the same combination can't exist twice.
+//
+// container = one shipment with one total price.
+// lot       = one part (variant) inside one container: how many arrived and how many are
+//             left in good / damaged condition. The stock of a part is the sum of its lots.
+// sale      = one customer visit (receipt), optionally sent by a repairman (referrer);
+//             its sale_items say which lot each part came from, the price and the commission.
+// return    = part of a sale item brought back: refund, and the unit goes back to a lot.
+//
+// Money is always stored in lari (…_gel). When it was entered in dollars the original
+// amount, currency and exchange rate are kept next to it.
+
+const tableExists = (name) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+const columnsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+
+function today() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
@@ -25,9 +44,9 @@ db.exec(`
   );
 `);
 
-// Databases from the first version had parts(id, name, quantity). Turn every old part
-// into its own category with a single variant, keeping ids so purchases/sales stay linked.
-function migrateOldParts() {
+// Version 1 had parts(id, name, quantity). Turn every old part into its own category with a
+// single variant, keeping ids so purchases/sales stay linked.
+function migrateFromV1() {
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
@@ -53,8 +72,7 @@ function migrateOldParts() {
   db.exec('PRAGMA foreign_keys = ON');
 }
 
-const partsColumns = db.prepare('PRAGMA table_info(parts)').all();
-if (partsColumns.length && !partsColumns.some((c) => c.name === 'category_id')) migrateOldParts();
+if (tableExists('parts') && !columnsOf('parts').includes('category_id')) migrateFromV1();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS fields (
@@ -71,6 +89,7 @@ db.exec(`
     UNIQUE (field_id, value)
   );
 
+  -- (quantity is left over from version 2 and no longer used: stock lives in lots)
   CREATE TABLE IF NOT EXISTS parts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL REFERENCES categories(id),
@@ -85,24 +104,168 @@ db.exec(`
     option_id INTEGER NOT NULL REFERENCES field_options(id),
     PRIMARY KEY (part_id, field_id)
   );
+`);
 
-  -- every time stock is bought / added: how many and the total cost
-  CREATE TABLE IF NOT EXISTS purchases (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    part_id    INTEGER NOT NULL REFERENCES parts(id),
-    quantity   INTEGER NOT NULL CHECK (quantity > 0),
-    total_cost REAL    NOT NULL CHECK (total_cost >= 0),
-    date       TEXT    NOT NULL
+// Version 2 had sales(part_id, quantity, total_price, date) and purchases(...). Move the old
+// sales table out of the way before the new one (a receipt) is created; migrateFromV2 below
+// turns the old rows into the new structure.
+const hasV2Data = tableExists('sales') && columnsOf('sales').includes('part_id');
+if (hasV2Data) db.exec('ALTER TABLE sales RENAME TO legacy_sales');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS containers (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    arrival_date  TEXT NOT NULL,
+    cost_amount   REAL NOT NULL CHECK (cost_amount >= 0),
+    cost_currency TEXT NOT NULL DEFAULT 'GEL' CHECK (cost_currency IN ('GEL', 'USD')),
+    cost_rate     REAL,
+    cost_gel      REAL NOT NULL CHECK (cost_gel >= 0),
+    note          TEXT NOT NULL DEFAULT ''
   );
 
-  -- every sale: how many and the total price it was sold for
+  CREATE TABLE IF NOT EXISTS lots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    container_id INTEGER NOT NULL REFERENCES containers(id),
+    part_id      INTEGER NOT NULL REFERENCES parts(id),
+    received     INTEGER NOT NULL DEFAULT 0 CHECK (received >= 0),
+    good         INTEGER NOT NULL DEFAULT 0 CHECK (good >= 0),
+    damaged      INTEGER NOT NULL DEFAULT 0 CHECK (damaged >= 0),
+    UNIQUE (container_id, part_id)
+  );
+  CREATE INDEX IF NOT EXISTS lots_part ON lots(part_id);
+
+  -- history of what happened to the units of a lot (arrival, damage, corrections, returns)
+  CREATE TABLE IF NOT EXISTS lot_events (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    lot_id         INTEGER NOT NULL REFERENCES lots(id) ON DELETE CASCADE,
+    date           TEXT    NOT NULL,
+    type           TEXT    NOT NULL CHECK (type IN ('received', 'damaged', 'correction', 'returned')),
+    good_change    INTEGER NOT NULL DEFAULT 0,
+    damaged_change INTEGER NOT NULL DEFAULT 0,
+    note           TEXT    NOT NULL DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS lot_events_lot ON lot_events(lot_id);
+
+  CREATE TABLE IF NOT EXISTS referrers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    phone       TEXT NOT NULL DEFAULT '',
+    default_pct REAL CHECK (default_pct IS NULL OR (default_pct >= 0 AND default_pct <= 100)),
+    note        TEXT NOT NULL DEFAULT '',
+    active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS referrer_payments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id INTEGER NOT NULL REFERENCES referrers(id),
+    date        TEXT NOT NULL,
+    amount      REAL NOT NULL CHECK (amount > 0),
+    currency    TEXT NOT NULL DEFAULT 'GEL' CHECK (currency IN ('GEL', 'USD')),
+    rate        REAL,
+    amount_gel  REAL NOT NULL CHECK (amount_gel > 0),
+    note        TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS referrer_payments_referrer ON referrer_payments(referrer_id);
+
   CREATE TABLE IF NOT EXISTS sales (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    part_id     INTEGER NOT NULL REFERENCES parts(id),
-    quantity    INTEGER NOT NULL CHECK (quantity > 0),
-    total_price REAL    NOT NULL CHECK (total_price >= 0),
-    date        TEXT    NOT NULL
+    date        TEXT NOT NULL,
+    referrer_id INTEGER REFERENCES referrers(id),
+    currency    TEXT NOT NULL DEFAULT 'GEL' CHECK (currency IN ('GEL', 'USD')),
+    rate        REAL,
+    note        TEXT NOT NULL DEFAULT ''
   );
+  CREATE INDEX IF NOT EXISTS sales_date ON sales(date);
+  CREATE INDEX IF NOT EXISTS sales_referrer ON sales(referrer_id);
+
+  CREATE TABLE IF NOT EXISTS sale_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id        INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+    lot_id         INTEGER NOT NULL REFERENCES lots(id),
+    quantity       INTEGER NOT NULL CHECK (quantity > 0),
+    damaged        INTEGER NOT NULL DEFAULT 0 CHECK (damaged IN (0, 1)),
+    price_amount   REAL    NOT NULL CHECK (price_amount >= 0),
+    price_gel      REAL    NOT NULL CHECK (price_gel >= 0),
+    commission_pct REAL    NOT NULL DEFAULT 0 CHECK (commission_pct >= 0 AND commission_pct <= 100),
+    commission_gel REAL    NOT NULL DEFAULT 0 CHECK (commission_gel >= 0)
+  );
+  CREATE INDEX IF NOT EXISTS sale_items_sale ON sale_items(sale_id);
+  CREATE INDEX IF NOT EXISTS sale_items_lot ON sale_items(lot_id);
+
+  CREATE TABLE IF NOT EXISTS returns (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_item_id        INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+    date                TEXT    NOT NULL,
+    quantity            INTEGER NOT NULL CHECK (quantity > 0),
+    condition           TEXT    NOT NULL CHECK (condition IN ('good', 'damaged')),
+    refund_amount       REAL    NOT NULL CHECK (refund_amount >= 0),
+    refund_currency     TEXT    NOT NULL DEFAULT 'GEL' CHECK (refund_currency IN ('GEL', 'USD')),
+    refund_rate         REAL,
+    refund_gel          REAL    NOT NULL CHECK (refund_gel >= 0),
+    commission_back_gel REAL    NOT NULL DEFAULT 0 CHECK (commission_back_gel >= 0),
+    note                TEXT    NOT NULL DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS returns_item ON returns(sale_item_id);
+
+  -- per lot: units sold (minus returned), money in (minus refunds) and commissions (minus give-backs)
+  DROP VIEW IF EXISTS lot_stats;
+  CREATE VIEW lot_stats AS
+  SELECT l.id AS lot_id, l.container_id, l.part_id, l.received, l.good, l.damaged,
+         COALESCE(s.qty, 0)        - COALESCE(r.qty, 0)    AS sold,
+         COALESCE(s.revenue, 0)    - COALESCE(r.refund, 0) AS revenue,
+         COALESCE(s.commission, 0) - COALESCE(r.back, 0)   AS commission
+  FROM lots l
+  LEFT JOIN (SELECT lot_id, SUM(quantity) AS qty, SUM(price_gel) AS revenue, SUM(commission_gel) AS commission
+             FROM sale_items GROUP BY lot_id) s ON s.lot_id = l.id
+  LEFT JOIN (SELECT si.lot_id, SUM(r.quantity) AS qty, SUM(r.refund_gel) AS refund, SUM(r.commission_back_gel) AS back
+             FROM returns r JOIN sale_items si ON si.id = r.sale_item_id GROUP BY si.lot_id) r ON r.lot_id = l.id;
 `);
+
+// Version 2 stock had no containers: put everything into one container "ძველი მარაგი"
+// (old stock) whose price is what was paid for it, and turn every old sale into a receipt.
+function migrateFromV2() {
+  db.exec('BEGIN');
+  try {
+    const purchases = tableExists('purchases') ? db.prepare('SELECT part_id, total_cost, date FROM purchases').all() : [];
+    const oldSales = db.prepare('SELECT part_id, quantity, total_price, date FROM legacy_sales ORDER BY date, id').all();
+    const parts = db.prepare('SELECT id, quantity FROM parts').all();
+    const sold = new Map();
+    for (const s of oldSales) sold.set(s.part_id, (sold.get(s.part_id) ?? 0) + s.quantity);
+    const withStock = parts.filter((p) => p.quantity > 0 || sold.has(p.id));
+
+    if (withStock.length || purchases.length) {
+      const dates = [...purchases, ...oldSales].map((r) => r.date).sort();
+      const arrival = dates[0] ?? today();
+      const cost = Math.round(purchases.reduce((sum, p) => sum + p.total_cost, 0) * 100) / 100;
+      const containerId = Number(db.prepare(`INSERT INTO containers (name, arrival_date, cost_amount, cost_currency, cost_gel, note)
+        VALUES ('ძველი მარაგი', ?, ?, 'GEL', ?, 'გადმოტანილია პროგრამის წინა ვერსიიდან')`).run(arrival, cost, cost).lastInsertRowid);
+
+      const lotOf = new Map();
+      for (const p of withStock) {
+        const received = p.quantity + (sold.get(p.id) ?? 0);
+        const lotId = Number(db.prepare('INSERT INTO lots (container_id, part_id, received, good, damaged) VALUES (?, ?, ?, ?, 0)')
+          .run(containerId, p.id, received, p.quantity).lastInsertRowid);
+        db.prepare("INSERT INTO lot_events (lot_id, date, type, good_change) VALUES (?, ?, 'received', ?)").run(lotId, arrival, received);
+        lotOf.set(p.id, lotId);
+      }
+      for (const s of oldSales) {
+        const saleId = Number(db.prepare("INSERT INTO sales (date, currency) VALUES (?, 'GEL')").run(s.date).lastInsertRowid);
+        db.prepare('INSERT INTO sale_items (sale_id, lot_id, quantity, price_amount, price_gel) VALUES (?, ?, ?, ?, ?)')
+          .run(saleId, lotOf.get(s.part_id), s.quantity, s.total_price, s.total_price);
+      }
+    }
+    db.exec('DROP TABLE legacy_sales');
+    db.exec('DROP TABLE IF EXISTS purchases');
+    db.exec('UPDATE parts SET quantity = 0');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+if (hasV2Data) migrateFromV2();
+else if (tableExists('purchases')) db.exec('DROP TABLE purchases');   // (empty v2 database)
 
 export { db };

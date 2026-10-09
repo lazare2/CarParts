@@ -40,10 +40,13 @@ function Copy-AppFiles([string]$dest) {
   if ($version -lt [version]'22.13') { throw "Node.js $version is too old. Please install version 22.13 or newer from https://nodejs.org." }
 
   New-Item -ItemType Directory -Force $dest | Out-Null
-  $publicDest = Join-Path $dest 'public'
-  if (Test-Path $publicDest) { Remove-Item $publicDest -Recurse -Force }
   foreach ($f in 'server.js', 'db.js', 'package.json', 'CarParts.ps1') { Copy-Item (Join-Path $repo $f) $dest -Force }
-  Copy-Item (Join-Path $repo 'public') $publicDest -Recurse -Force
+  # folders are replaced as a whole, so files removed from the app don't linger
+  foreach ($d in 'api', 'public') {
+    $target = Join-Path $dest $d
+    if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+    Copy-Item (Join-Path $repo $d) $target -Recurse -Force
+  }
   Copy-Item (Join-Path $PSScriptRoot 'carparts.ico') $dest -Force
   Copy-Item (Join-Path $PSScriptRoot 'uninstall.ps1') $dest -Force
   Copy-Item $nodeSource (Join-Path $dest 'node.exe') -Force
@@ -138,8 +141,10 @@ try {
   # program files
   if ($Payload) {
     New-Item -ItemType Directory -Force $InstallDir | Out-Null
-    $publicDest = Join-Path $InstallDir 'public'
-    if (Test-Path $publicDest) { Remove-Item $publicDest -Recurse -Force }
+    foreach ($d in 'api', 'public') {
+      $target = Join-Path $InstallDir $d
+      if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+    }
     Expand-Archive -Path $Payload -DestinationPath $InstallDir -Force
   } else {
     Copy-AppFiles $InstallDir

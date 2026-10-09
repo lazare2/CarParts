@@ -1,7 +1,7 @@
 {
   "name": "carparts",
-  "version": "1.0.0",
-  "description": "Simple stock and finance tracker for imported car parts",
+  "version": "2.0.0",
+  "description": "Stock, containers, sales and repairman commissions for imported car parts",
   "type": "module",
   "scripts": {
     "start": "node server.js",
