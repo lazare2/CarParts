@@ -90,9 +90,20 @@ try {
     # own window without tabs/address bar; a separate profile so we can wait until it is closed
     # (wait for the main browser process only: helper processes can linger after the window is closed)
     $window = Start-Process -FilePath $browser -PassThru -ArgumentList @(
-      "--app=$url", "--user-data-dir=`"$profileDir`"", '--no-first-run', '--no-default-browser-check', '--window-size=1200,860')
+      "--app=$url", "--user-data-dir=`"$profileDir`"", '--no-first-run', '--no-default-browser-check',
+      '--disable-background-mode', '--window-size=1200,860')
     Log "window opened, pid $($window.Id)"
-    $window.WaitForExit()
+    # Done when the browser exits, or when it no longer shows any window: Edge can keep running
+    # invisibly in the background after the last window is closed.
+    $seen = $false
+    $gone = 0
+    while (-not $window.HasExited) {
+      Start-Sleep -Seconds 2
+      $window.Refresh()
+      if ($window.MainWindowHandle -ne [IntPtr]::Zero) { $seen = $true; $gone = 0 }
+      elseif ($seen) { $gone++ }
+      if ($gone -ge 3) { Log 'no window left, browser still in the background'; break }
+    }
     Log "window closed"
     # Only the launcher that started the server cleans up. A second launch just opens another window
     # in the already running one (its browser process exits at once) and must leave everything alone.
