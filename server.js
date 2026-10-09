@@ -39,10 +39,10 @@ function readBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const { pathname } = new URL(req.url, 'http://localhost');
+  const { pathname, searchParams } = new URL(req.url, 'http://localhost');
   try {
     if (pathname.startsWith('/api/')) {
-      const body = req.method === 'GET' ? {} : await readBody(req);
+      const body = req.method === 'GET' ? Object.fromEntries(searchParams) : await readBody(req);
       return send(res, 200, dispatch(req.method, pathname, body));
     }
 

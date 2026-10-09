@@ -1,6 +1,6 @@
 {
   "name": "carparts",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Stock, containers, sales and repairman commissions for imported car parts",
   "type": "module",
   "scripts": {

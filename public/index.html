@@ -9,10 +9,15 @@
 </head>
 <body>
   <header>
-    <h1>ავტონაწილები</h1>
+    <div class="header-row">
+      <h1>ავტონაწილები</h1>
+      <button id="cart-indicator" class="cart-indicator" hidden title="კალათა">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5.2 4l.4 2H21l-2.2 8.2a2 2 0 0 1-1.9 1.5H8.1a2 2 0 0 1-2-1.6L4 2H1V0h4.6z" transform="translate(0 1)"/></svg>
+        კალათა <span></span></button>
+    </div>
     <nav>
       <button class="tab active" data-tab="parts">ნაწილები</button>
-      <button class="tab" data-tab="containers">კონტეინერები</button>
+      <button class="tab" data-tab="stock">მარაგი და კონტეინერები</button>
       <button class="tab" data-tab="referrers">ხელოსნები</button>
       <button class="tab" data-tab="finance">ფინანსები</button>
       <button class="tab" data-tab="admin">ადმინი</button>
@@ -22,25 +27,56 @@
   <div id="message" class="message" hidden></div>
 
   <main>
-    <!-- ნაწილები: what is in stock -->
-    <section id="parts" class="panel">
-      <input id="search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
-      <div id="parts-list"></div>
-      <p id="parts-empty" class="empty" hidden>მარაგი ჯერ ცარიელია. ნაწილები ემატება <b>კონტეინერები</b> გვერდიდან.</p>
-      <p id="parts-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
+    <!-- ნაწილები: categories | parts | cart -->
+    <section id="parts" class="panel shop">
+      <aside class="shop-cats card">
+        <input id="search" type="search" placeholder="ძებნა...">
+        <nav id="cat-menu"></nav>
+      </aside>
+      <div class="shop-main card">
+        <div id="shop-head" class="shop-head"></div>
+        <div id="parts-list"></div>
+        <p id="parts-empty" class="empty" hidden>მარაგი ჯერ ცარიელია. ნაწილები ემატება <b>მარაგი და კონტეინერები</b> გვერდიდან.</p>
+        <p id="parts-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
+      </div>
+      <aside id="cart" class="cart card">
+        <div class="cart-head"><h3>კალათა</h3><span id="cart-count" class="muted"></span></div>
+        <div id="cart-items"></div>
+        <p id="cart-empty" class="hint">კალათა ცარიელია. დაამატეთ ნაწილები ღილაკით „+“.</p>
+        <div class="cart-foot">
+          <button id="cart-checkout" class="sell" disabled>გაყიდვის გაფორმება</button>
+          <button id="cart-clear" class="secondary sm" disabled>გასუფთავება</button>
+        </div>
+      </aside>
     </section>
 
-    <!-- კონტეინერები -->
-    <section id="containers" class="panel" hidden>
-      <div id="containers-list-view">
-        <div class="toolbar">
-          <h2 class="grow">კონტეინერები</h2>
-          <button id="new-container-btn">+ ახალი კონტეინერი</button>
-        </div>
-        <div id="container-cards" class="card-grid"></div>
-        <p id="containers-empty" class="empty" hidden>კონტეინერები ჯერ არ არის. დაიწყეთ „+ ახალი კონტეინერი“-თი.</p>
+    <!-- მარაგი და კონტეინერები -->
+    <section id="stock" class="panel" hidden>
+      <div class="toolbar">
+        <h2 class="grow">მარაგი და კონტეინერები</h2>
+        <button id="new-container-btn">+ ახალი კონტეინერი</button>
       </div>
-      <div id="container-detail" hidden></div>
+      <div class="chip-row" id="container-chips"></div>
+      <div id="stock-summary"></div>
+      <div class="filters">
+        <input id="inv-search" type="search" placeholder="ძებნა (ნაწილი, ბრენდი, მანქანა...)">
+        <select id="inv-category" aria-label="კატეგორია"></select>
+        <div class="seg" id="inv-state">
+          <button data-value="all" class="active">ყველა</button>
+          <button data-value="instock">მარაგში</button>
+          <button data-value="damaged">დაზიანებული</button>
+          <button data-value="soldout">ამოწურული</button>
+        </div>
+        <div class="seg" id="inv-group">
+          <span class="seg-label">დაჯგუფება:</span>
+          <button data-value="part" class="active">ნაწილით</button>
+          <button data-value="container">კონტეინერით</button>
+        </div>
+      </div>
+      <div id="inv-focus" class="focus-banner" hidden></div>
+      <div id="inv-totals" class="inv-totals"></div>
+      <div id="inv-list" class="table-wrap"></div>
+      <p id="inv-empty" class="empty" hidden></p>
     </section>
 
     <!-- ხელოსნები -->
@@ -59,9 +95,15 @@
 
     <!-- ფინანსები -->
     <section id="finance" class="panel" hidden>
-      <div id="finance-totals" class="stats"></div>
-      <div id="finance-body"></div>
-      <p id="finance-empty" class="empty" hidden>ჯერ არაფერია: არც კონტეინერები, არც გაყიდვები.</p>
+      <div class="finance-top">
+        <nav class="subnav">
+          <button class="fsub active" data-fsub="overview">მიმოხილვა</button>
+          <button class="fsub" data-fsub="ledger">შემოსავლები და გადახდები</button>
+        </nav>
+        <div id="period" class="period"></div>
+      </div>
+      <div id="fin-overview"></div>
+      <div id="fin-ledger" hidden></div>
     </section>
 
     <!-- ადმინი -->
@@ -72,12 +114,11 @@
       </nav>
 
       <div id="sub-variants" class="subpanel">
-        <div id="variant-stats" class="stats"></div>
         <div class="toolbar">
           <input id="variant-search" type="search" placeholder="ძებნა (კატეგორია, ბრენდი, მანქანა...)">
           <button id="toggle-all" class="secondary" hidden>ყველას დაკეცვა</button>
         </div>
-        <p class="hint">ახალი ნაწილები ემატება კონტეინერებიდან. აქ შეგიძლიათ შეცვალოთ, რა წერია ნაწილზე.</p>
+        <p class="hint">აქ შეგიძლიათ შეცვალოთ, რა წერია ნაწილზე (მაგ. შეცდომით არჩეული ბრენდი). რაოდენობები იმართება <b>მარაგი და კონტეინერები</b> გვერდზე.</p>
         <div id="admin-body"></div>
         <p id="admin-empty" class="empty" hidden>ნაწილები ჯერ არ არის.</p>
         <p id="admin-nomatch" class="empty" hidden>ვერაფერი მოიძებნა.</p>
@@ -94,16 +135,6 @@
       </div>
     </section>
   </main>
-
-  <!-- basket: shown while it has parts -->
-  <div id="basket-bar" hidden>
-    <div class="basket-inner">
-      <b id="basket-count"></b>
-      <div id="basket-list" class="chips"></div>
-      <button id="basket-clear" class="secondary sm">გასუფთავება</button>
-      <button id="basket-checkout" class="sell">გაყიდვის გაფორმება</button>
-    </div>
-  </div>
 
   <script type="module" src="js/main.js"></script>
 </body>

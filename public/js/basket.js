@@ -7,39 +7,76 @@ import {
 // { part_id, lot_id (null = oldest with stock), damaged, quantity }
 let items = [];
 
+// how many of this cart line can be taken: a chosen container (good or damaged), otherwise all good stock
+function available(item) {
+  const found = findPart(item.part_id);
+  if (!found) return 0;
+  if (item.lot_id) {
+    const lot = found.part.lots.find((l) => l.id === item.lot_id);
+    return lot ? (item.damaged ? lot.damaged : lot.good) : 0;
+  }
+  return found.part.good;
+}
+
 export function addToBasket(partId, { lotId = null, damaged = false } = {}) {
-  const same = items.find((i) => i.part_id === partId && i.lot_id === lotId && i.damaged === damaged);
-  if (same) same.quantity += 1;
-  else items.push({ part_id: partId, lot_id: lotId, damaged, quantity: 1 });
-  renderBar();
+  const same = items.find((i) => i && i.part_id === partId && i.lot_id === lotId && i.damaged === damaged);
   const found = findPart(partId);
-  showMessage(`კალათაში დაემატა: ${found ? partLabel(found.cat, found.part) : ''}`);
+  const label = found ? partLabel(found.cat, found.part) : '';
+  if (same) {
+    if (same.quantity >= available(same)) return showMessage(`${label}: მარაგში მეტი აღარ არის`, false);
+    same.quantity += 1;
+  } else {
+    items.push({ part_id: partId, lot_id: lotId, damaged, quantity: 1 });
+  }
+  renderCart();
+  showMessage(`კალათაში დაემატა: ${label}`);
 }
 
 // (lines removed inside the open checkout are null until it closes, so indexes stay valid)
-function renderBar() {
-  const bar = $('#basket-bar');
+function renderCart() {
   const live = items.map((item, idx) => ({ item, idx })).filter(({ item }) => item && findPart(item.part_id));
-  bar.hidden = !live.length;
-  if (!live.length) return;
   const count = live.reduce((sum, { item }) => sum + item.quantity, 0);
-  $('#basket-count').textContent = `კალათაში: ${count} ცალი (${live.length} ნაწილი)`;
-  $('#basket-list').innerHTML = live.map(({ item, idx }) => {
+  $('#cart-count').textContent = live.length ? `${count} ც.` : '';
+  $('#cart-empty').hidden = live.length > 0;
+  $('#cart-checkout').disabled = !live.length;
+  $('#cart-clear').disabled = !live.length;
+  const indicator = $('#cart-indicator');
+  indicator.hidden = !live.length;
+  $('span', indicator).textContent = count;
+  $('#cart-items').innerHTML = live.map(({ item, idx }) => {
     const { cat, part } = findPart(item.part_id);
-    return `<span class="chip">${esc(partLabel(cat, part))}${item.quantity > 1 ? ` × ${item.quantity}` : ''}
-      <button class="link" data-basket-remove="${idx}" title="ამოღება">×</button></span>`;
+    const details = partLabel(cat, part).slice(cat.name.length).replace(/^ — /, '');
+    const max = available(item);
+    return `
+      <div class="cart-item" data-idx="${idx}">
+        <div class="ci-text">
+          <b>${esc(cat.name)}</b>
+          ${details ? `<span class="details">${esc(details)}</span>` : ''}
+          ${item.lot_id ? `<span class="lot-pill${item.damaged ? ' bad' : ''}">${esc(containerName(part.lots.find((l) => l.id === item.lot_id)?.container_id))}${item.damaged ? ' · დაზიანებული' : ''}</span>` : ''}
+        </div>
+        <div class="ci-qty">
+          <button class="qbtn" data-dec title="ერთით ნაკლები">−</button>
+          <span>${item.quantity}</span>
+          <button class="qbtn" data-inc title="ერთით მეტი" ${item.quantity >= max ? 'disabled' : ''}>+</button>
+        </div>
+        <button class="link ci-remove" data-remove title="ამოღება">×</button>
+      </div>`;
   }).join('');
 }
 
-$('#basket-list').addEventListener('click', (e) => {
-  const idx = e.target.dataset.basketRemove;
-  if (idx === undefined) return;
-  items.splice(Number(idx), 1);
-  renderBar();
+$('#cart-items').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-idx]');
+  if (!row) return;
+  const item = items[Number(row.dataset.idx)];
+  if (e.target.hasAttribute('data-inc') && item.quantity < available(item)) item.quantity += 1;
+  if (e.target.hasAttribute('data-dec')) item.quantity -= 1;
+  if (e.target.hasAttribute('data-remove') || item.quantity <= 0) items.splice(Number(row.dataset.idx), 1);
+  renderCart();
 });
-$('#basket-clear').addEventListener('click', () => { items = []; renderBar(); });
-$('#basket-checkout').addEventListener('click', () => openCheckout());
-onRefresh(renderBar);
+$('#cart-clear').addEventListener('click', () => { items = []; renderCart(); });
+$('#cart-checkout').addEventListener('click', () => openCheckout());
+$('#cart-indicator').addEventListener('click', () => $('.tab[data-tab="parts"]').click());
+onRefresh(renderCart);
 
 // where a line can be taken from: every container that still has it, good or damaged
 function sources(part) {
@@ -120,7 +157,7 @@ export function openCheckout() {
       });
       const total = $('.total-price', f).textContent;
       items = [];
-      renderBar();
+      renderCart();
       return `გაიყიდა ${lines.length} ნაწილი, სულ ${total}`;
     },
   });
@@ -192,7 +229,7 @@ export function openCheckout() {
     if (!$$('tbody tr', form).length) form.closest('dialog').close();
     else recalc();
   });
-  form.closest('dialog').addEventListener('close', () => { items = items.filter(Boolean); renderBar(); });
+  form.closest('dialog').addEventListener('close', () => { items = items.filter(Boolean); renderCart(); });
 
   recalc();
   $('.price', form)?.focus();

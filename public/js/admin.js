@@ -1,7 +1,7 @@
 // ადმინი: part types (variants) overview + categories, their fields and values
 import {
-  $, $$, esc, state, api, act, onRefresh, openDialog, findCat, findPart, partCells, partLabel, lotSummary,
-  pickers, collectValues, qtyBadge, stat, byText,
+  $, $$, esc, state, api, act, onRefresh, openDialog, findCat, findPart, partCells, partLabel,
+  pickers, collectValues, byText,
 } from './core.js';
 
 // ---------- sub tabs ----------
@@ -24,16 +24,6 @@ function updateToggleAll() {
 function renderVariants() {
   const q = $('#variant-search').value.trim().toLowerCase();
   const allParts = state.categories.flatMap((c) => c.parts);
-  const good = allParts.reduce((sum, p) => sum + p.good, 0);
-  const damaged = allParts.reduce((sum, p) => sum + p.damaged, 0);
-  const soldOut = allParts.filter((p) => p.lots.length && p.good === 0).length;
-  $('#variant-stats').innerHTML =
-    stat('კატეგორია', state.categories.length) +
-    stat('ნაწილის სახეობა', allParts.length) +
-    stat('მარაგში (კარგი)', good) +
-    stat('დაზიანებული', damaged, damaged ? 'bad' : '') +
-    stat('ამოწურულია', soldOut, soldOut ? 'warn' : '');
-
   let html = '';
   let shown = 0;
   for (const cat of state.categories) {
@@ -45,22 +35,19 @@ function renderVariants() {
       .sort((a, b) => byText(a.cells.join(' '), b.cells.join(' ')));
     if (!rows.length) continue;
     shown++;
-    const total = cat.parts.reduce((sum, p) => sum + p.good, 0);
     html += `
       <details class="cat" data-vcat="${cat.id}" ${q || !closed.has(cat.id) ? 'open' : ''}>
         <summary><span class="cat-name">${esc(cat.name)}</span>
-          <span class="cat-total">სახეობა: ${cat.parts.length} · მარაგში: ${total}</span></summary>
+          <span class="cat-total">სახეობა: ${cat.parts.length}</span></summary>
         <table>
           <thead><tr>
             ${cat.fields.map((f) => `<th>${esc(f.name)}</th>`).join('')}
-            <th>კონტეინერები (კარგი)</th><th class="num">მარაგში</th><th class="num">დაზიან.</th><th></th>
+            <th class="num">კონტეინერებში</th><th></th>
           </tr></thead>
           <tbody>${rows.map(({ part, cells }) => `
             <tr data-part="${part.id}">
               ${cells.map((c) => `<td>${c ? esc(c) : '—'}</td>`).join('')}
-              <td class="lots">${lotSummary(part) || '<span class="muted">—</span>'}</td>
-              <td class="num">${qtyBadge(part.good)}</td>
-              <td class="num">${part.damaged ? `<span class="qty zero">${part.damaged}</span>` : '0'}</td>
+              <td class="num muted">${part.lots.length}</td>
               <td><div class="row-actions">
                 ${cat.fields.length ? '<button class="sm secondary" data-action="edit">ცვლილება</button>' : ''}
                 ${part.lots.length ? '' : '<button class="sm danger" data-action="delete" title="წაშლა">×</button>'}

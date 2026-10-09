@@ -1,12 +1,12 @@
 import { $$, refresh, showMessage } from './core.js';
-import './stock.js';
+import './shop.js';
 import './admin.js';
-import { showContainers } from './containers.js';
+import { showStock } from './inventory.js';
 import { showReferrers } from './referrers.js';
 import { showFinance } from './finance.js';
 
 // views that load their own data when opened
-const loaders = { containers: showContainers, referrers: showReferrers, finance: showFinance };
+const loaders = { stock: showStock, referrers: showReferrers, finance: showFinance };
 
 $$('.tab').forEach((btn) =>
   btn.addEventListener('click', () => {

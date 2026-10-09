@@ -7,19 +7,22 @@ import {
 } from './util.js';
 
 // cost vs. what came back: income = sales - refunds - repairman commissions
+// margin (მარჟა) = profit ÷ sales income (sales - refunds)
 function withMoney(c) {
   const income = round2(c.revenue - c.commission);
+  const profit = round2(income - c.cost_gel);
   return {
     ...c,
     revenue: round2(c.revenue),
     commission: round2(c.commission),
     income,
-    profit: round2(income - c.cost_gel),
+    profit,
     recovered_pct: c.cost_gel > 0 ? round2((income / c.cost_gel) * 100) : null,
+    margin: c.revenue > 0 ? round2((profit / c.revenue) * 100) : null,
   };
 }
 
-function containerStats(where = '', params = []) {
+export function containerStats(where = '', params = []) {
   return db.prepare(`
     SELECT c.*, COUNT(ls.lot_id) AS lines,
            COALESCE(SUM(ls.received), 0) AS received, COALESCE(SUM(ls.good), 0) AS good,
@@ -47,6 +50,22 @@ function containerInput(body) {
 }
 
 route('GET', '/api/containers', () => containerStats());
+
+// every lot (a part in a container) with its numbers, for the stock page
+route('GET', '/api/lots', () => {
+  const info = partInfo();
+  const withSales = new Set(db.prepare('SELECT DISTINCT lot_id FROM sale_items').all().map((r) => r.lot_id));
+  return db.prepare('SELECT ls.*, p.category_id FROM lot_stats ls JOIN parts p ON p.id = ls.part_id').all().map((l) => ({
+    ...l,
+    revenue: round2(l.revenue),
+    commission: round2(l.commission),
+    avg_price: l.sold > 0 ? round2(l.revenue / l.sold) : null,
+    category: info.get(l.part_id).category,
+    details: info.get(l.part_id).details,
+    label: info.get(l.part_id).label,
+    has_sales: withSales.has(l.lot_id),
+  }));
+});
 
 route('GET', '/api/containers/:id', (body, id) => {
   getContainer(id);
