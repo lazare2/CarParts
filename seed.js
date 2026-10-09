@@ -79,8 +79,9 @@ try {
   }));
   for (const def of DEMO) {
     const cat = catByName.get(def.name);
-    for (const [values, unit] of def.variants) {
-      const into = containers.filter(() => rnd() < 0.55);
+    def.variants.forEach(([values, unit], i) => {
+      // the first part of every category came in all three containers, the others in one or two
+      const into = i === 0 ? [...containers] : containers.filter(() => rnd() < 0.5);
       if (!into.length) into.push(pick(containers));
       for (const c of into) {
         const quantity = int(2, 10);
@@ -91,7 +92,7 @@ try {
         };
         unitValue.set(call('POST', `/api/containers/${c.id}/items`, body).part_id, unit);
       }
-    }
+    });
   }
 
   const referrers = REFERRERS.map((r) => call('POST', '/api/referrers', r).id);
@@ -128,6 +129,16 @@ try {
     quantity: 1, condition: i === 1 ? 'good' : 'damaged', date: it.date,
     refund: { amount: Math.round(it.price_gel / it.quantity), currency: 'GEL' }, note: i === 1 ? 'არ მოერგო' : 'მყიდველმა დაზიანებული დააბრუნა',
   }));
+
+  // a damaged unit sold cheaply through a repairman, and a sale paid in dollars
+  const now = call('GET', '/api/catalog');
+  const allLots = now.categories.flatMap((c) => c.parts).flatMap((p) => p.lots.map((l) => ({ ...l, part_id: p.id })));
+  const damagedLot = allLots.find((l) => l.damaged > 0);
+  if (damagedLot) call('POST', '/api/sales', { date: daysAgo(2), referrer_id: referrers[0], note: 'დაზიანებული, ნაწილებად',
+    items: [{ lot_id: damagedLot.id, quantity: 1, damaged: true, price: Math.round(unitValue.get(damagedLot.part_id) * 0.3), commission_pct: 10 }] });
+  const goodLots = allLots.filter((l) => l.good > 0);
+  call('POST', '/api/sales', { date: daysAgo(1), currency: 'USD', rate: 2.7, note: 'გადაიხადა დოლარში',
+    items: goodLots.slice(-2).map((l) => ({ lot_id: l.id, quantity: 1, price: Math.round(unitValue.get(l.part_id) / 2.7) })) });
 
   // repairmen are paid for every month before the current one
   const thisMonth = daysAgo(0).slice(0, 7);
