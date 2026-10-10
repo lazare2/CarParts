@@ -10,7 +10,7 @@ let history = [];     // GET /api/exchanges
 let owed = new Map(); // repairman id -> what we owe him now
 
 const fresh = () => ({
-  mode: 'order', saleId: null, search: '',
+  mode: 'order', saleId: null, search: '', orderRef: '',
   lines: {},          // order line id -> { qty, condition, credit, creditTouched }
   loose: [],          // { lot_id, part_id, qty, condition, credit }
   newItems: [],       // { lot_id, part_id, damaged, qty, price }
@@ -91,23 +91,34 @@ function orderPart() {
   const s = sale();
   if (!s) {
     const q = f.search.toLowerCase();
-    const found = orders.filter((o) => !q || [dateLabel(o.date), o.referrer ?? '', String(o.total), ...o.items.map((i) => `${i.label} ${i.container}`)]
-      .join(' ').toLowerCase().includes(q)).slice(0, 12);
+    const byRef = (o) => !f.orderRef || (f.orderRef === 'none' ? !o.referrer_id : o.referrer_id === Number(f.orderRef));
+    const matching = orders.filter((o) => byRef(o) && (!q || [dateLabel(o.date), o.referrer ?? '', String(o.total),
+      ...o.items.map((i) => `${i.label} ${i.container}`)].join(' ').toLowerCase().includes(q)));
+    const found = matching.slice(0, 40);
+    const refs = [...new Map(orders.filter((o) => o.referrer_id).map((o) => [o.referrer_id, o.referrer])).entries()];
     return `
-      <input type="search" id="order-search" placeholder="ძებნა: ნაწილი, ხელოსანი, თარიღი (მაგ. 05.10), თანხა..." value="${esc(f.search)}">
+      <div class="order-filters">
+        <select id="order-ref" aria-label="ხელოსანი">
+          <option value="">ყველა შეკვეთა</option>
+          ${refs.map(([id, name]) => `<option value="${id}" ${String(id) === f.orderRef ? 'selected' : ''}>გამოგზავნა: ${esc(name)}</option>`).join('')}
+          <option value="none" ${f.orderRef === 'none' ? 'selected' : ''}>ხელოსნის გარეშე</option>
+        </select>
+        <input type="search" id="order-search" placeholder="ძებნა: ნაწილი, ხელოსანი, თარიღი (მაგ. 05.10), თანხა..." value="${esc(f.search)}">
+      </div>
+      ${matching.length > found.length ? `<p class="hint">ნაჩვენებია ${found.length} / ${matching.length} — დააზუსტეთ ძებნა.</p>` : ''}
       <div class="order-list">${found.map((o) => `
         <button class="order-pick" data-sale="${o.id}">
           <span class="op-date">${dateLabel(o.date)}</span>
           <span class="op-items">${o.items.map((i) => `${esc(i.label)}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join(', ')}
             ${o.exchange_id ? ' <span class="tag">გაცვლა</span>' : ''}</span>
-          <span class="op-ref">${o.referrer ? esc(o.referrer) : '<span class="muted">ხელოსნის გარეშე</span>'}</span>
+          <span class="op-ref">${o.referrer ? `${esc(o.referrer)}${paidBadge(o)}` : '<span class="muted">ხელოსნის გარეშე</span>'}</span>
           <b>${gel(o.total)}</b>
         </button>`).join('') || '<p class="hint">შეკვეთა ვერ მოიძებნა. თუ მყიდველს არ ახსოვს, აირჩიეთ „შეკვეთის გარეშე“.</p>'}</div>`;
   }
   return `
     <div class="order-chosen">
       <b>შეკვეთა ${dateLabel(s.date)}</b>
-      <span>${s.referrer ? `ხელოსანი: <b>${esc(s.referrer)}</b>` : '<span class="muted">ხელოსნის გარეშე</span>'}</span>
+      <span>${s.referrer ? `ხელოსანი: <b>${esc(s.referrer)}</b>${paidBadge(s)}` : '<span class="muted">ხელოსნის გარეშე</span>'}</span>
       <span>სულ: ${gel(s.total)}</span>
       <span class="grow"></span>
       <button class="sm secondary" id="order-change">სხვა შეკვეთა</button>
@@ -128,6 +139,16 @@ function orderPart() {
         </tr>`;
       }).join('')}</tbody>
     </table>`;
+}
+
+// is the commission of this order already paid to the repairman?
+function paidBadge(o) {
+  const com = o.items.reduce((s, i) => s + i.commission_gel, 0);
+  if (com <= 0) return '';
+  const paid = o.items.reduce((s, i) => s + i.commission_paid_gel, 0);
+  return paid <= 0.005 ? ' <span class="tag pay-open">საკომისიო გადაუხდელი</span>'
+    : paid + 0.005 >= com ? ' <span class="tag pay-done">საკომისიო გადახდილია</span>'
+    : ' <span class="tag pay-part">ნაწილობრივ გადახდილი</span>';
 }
 
 const conditionSelect = (c) => `<select class="r-cond">
@@ -399,6 +420,7 @@ $('#ret-form').addEventListener('change', (e) => {
   if (t.id === 'ret-apply') f.apply = t.checked;
   if (t.id === 'ret-currency') { f.currency = t.value; recomputeCredits(); return renderForm(); }
   if (t.id === 'loose-ref') { f.referrerId = t.value; f.pctTouched = false; f.apply = null; }
+  if (t.id === 'order-ref') { f.orderRef = t.value; return renderForm(); }
   if (t.classList.contains('la-part')) {
     const lotSel = $('.la-lot', form());
     const options = (soldOptions().get(Number(t.value)) ?? []);

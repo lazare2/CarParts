@@ -1,6 +1,7 @@
 // repairmen who send customers (referrers), their commissions and the payments made to them
 import { db } from '../db.js';
 import { route } from './router.js';
+import { paidCommission } from './sales.js';
 import {
   HttpError, round2, today, month, run, insertId, cleanName, textIn, dateIn, moneyIn, pctIn, getReferrer, must, partInfo,
 } from './util.js';
@@ -83,6 +84,13 @@ route('GET', '/api/referrers', () => {
 route('GET', '/api/referrers/:id', (body, id) => {
   const referrer = getReferrer(id);
   const info = partInfo();
+  const paidOf = paidCommission();
+  const backOf = new Map(db.prepare(`SELECT sale_item_id, SUM(commission_back_gel) AS back FROM returns
+    WHERE sale_item_id IS NOT NULL GROUP BY sale_item_id`).all().map((r) => [r.sale_item_id, r.back]));
+  const editsOf = new Map();
+  for (const e of db.prepare(`SELECT ce.* FROM commission_edits ce JOIN sale_items si ON si.id = ce.sale_item_id
+      JOIN sales s ON s.id = si.sale_id WHERE s.referrer_id = ? ORDER BY ce.id`).all(id))
+    (editsOf.get(e.sale_item_id) ?? editsOf.set(e.sale_item_id, []).get(e.sale_item_id)).push(e);
   const months = new Map();
   let earned = 0;
   for (const e of commissionEntries(id)) {
@@ -91,7 +99,13 @@ route('GET', '/api/referrers/:id', (body, id) => {
     const entry = months.get(m);
     entry.earned += e.amount;
     entry.sales += e.price;
-    entry.lines.push({ ...e, label: info.get(e.part_id).label, amount: round2(e.amount), price: round2(e.price) });
+    entry.lines.push({
+      ...e, label: info.get(e.part_id).label, amount: round2(e.amount), price: round2(e.price),
+      ...(e.kind === 'sale' ? {
+        paid_gel: paidOf.get(e.item_id) ?? 0, edits: editsOf.get(e.item_id) ?? [],
+        net_gel: round2(e.amount - (backOf.get(e.item_id) ?? 0)),   // what is left after commission taken back on returns
+      } : {}),
+    });
     earned += e.amount;
   }
   const payments = paymentsOf(id);
@@ -111,6 +125,11 @@ route('GET', '/api/referrers/:id', (body, id) => {
       }))
       .sort((a, b) => b.month.localeCompare(a.month)),
     payments,
+    edits: [...editsOf.values()].flat().map((e) => {
+      const line = db.prepare(`SELECT l.part_id, s.date AS sale_date FROM sale_items si JOIN lots l ON l.id = si.lot_id
+        JOIN sales s ON s.id = si.sale_id WHERE si.id = ?`).get(e.sale_item_id);
+      return { ...e, label: info.get(line.part_id).label, sale_date: line.sale_date };
+    }).sort((a, b) => b.id - a.id),
   };
 });
 

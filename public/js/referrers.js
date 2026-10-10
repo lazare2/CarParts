@@ -143,13 +143,14 @@ async function loadDetail() {
         <summary><span class="cat-name">${monthLabel(m.month)}</span>
           <span class="cat-total">გაყიდვები: ${gel(m.sales)} · საკომისიო: <b>${gel(m.earned)}</b></span></summary>
         <table>
-          <thead><tr><th>თარიღი</th><th>ნაწილი</th><th class="num">რაოდ.</th><th class="num">ფასი</th><th class="num">%</th><th class="num">საკომისიო</th></tr></thead>
+          <thead><tr><th>თარიღი</th><th>ნაწილი</th><th class="num">რაოდ.</th><th class="num">ფასი</th><th class="num">%</th><th class="num">საკომისიო</th><th>სტატუსი</th></tr></thead>
           <tbody>${m.lines.map((l) => `
-            <tr class="${l.kind === 'return' ? 'return-row' : ''}">
+            <tr class="${l.kind === 'return' ? 'return-row' : ''}" data-item="${l.item_id ?? ''}" data-kind="${l.kind}">
               <td>${dateLabel(l.date)}</td>
               <td>${esc(l.label)}${l.damaged ? ' <span class="tag bad">დაზიანებული</span>' : ''}${l.kind === 'return' ? ' <span class="tag">დაბრუნება</span>' : ''}${l.exchange_id && l.kind === 'sale' ? ' <span class="tag">გაცვლა</span>' : ''}</td>
               <td class="num">${l.quantity}</td><td class="num">${gel(l.price)}</td>
-              <td class="num">${l.exchange_id && l.kind === 'sale' ? `${fmt(l.pct)}% სხვაობაზე` : `${fmt(l.pct)}%`}</td><td class="num">${gel(l.amount)}</td>
+              <td class="num">${l.exchange_id && l.kind === 'sale' ? `${fmt(l.pct)}% სხვაობაზე` : `${fmt(l.pct)}%`}</td><td class="num">${gel(l.amount)}${l.edits?.length ? ` <span class="tag" title="${esc(l.edits.map((e) => `${dateLabel(e.date)}: ${fmt(e.old_pct)}% → ${fmt(e.new_pct)}%${e.note ? ` (${e.note})` : ''}`).join('; '))}">შესწორდა</span>` : ''}</td>
+              <td>${lineStatus(l)}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -169,6 +170,16 @@ async function loadDetail() {
       <p class="hint">„არ ჩამოიჭრა / არ დაემატა“ ნიშნავს, რომ შემთხვევა ჩაწერილია, მაგრამ გადასახდელი არ შეცვლილა.</p>`
       : '<p class="hint">ამ ხელოსნის მყიდველებს ჯერ არაფერი დაუბრუნებიათ.</p>'}
 
+    ${detail.edits.length ? `
+      <h3>საკომისიოს შესწორებები</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>როდის</th><th>შეკვეთა</th><th>ნაწილი</th><th class="num">იყო</th><th class="num">გახდა</th><th>მიზეზი</th></tr></thead>
+        <tbody>${detail.edits.map((e) => `
+          <tr><td>${dateLabel(e.date)}</td><td>${dateLabel(e.sale_date)}</td><td>${esc(e.label)}</td>
+            <td class="num">${fmt(e.old_pct)}% = ${gel(e.old_gel)}</td><td class="num">${fmt(e.new_pct)}% = ${gel(e.new_gel)}</td>
+            <td>${esc(e.note)}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+
     <h3>გადახდები</h3>
     ${detail.payments.length ? `
       <table>
@@ -183,9 +194,47 @@ async function loadDetail() {
       </table>` : '<p class="hint">გადახდები ჯერ არ არის.</p>'}`;
 }
 
+// sale lines: paid or not (payments cover the oldest commissions first); unpaid ones can be corrected
+function lineStatus(l) {
+  if (l.kind !== 'sale') return '';
+  if (l.exchange_id) return '<span class="muted">გაცვლა</span>';
+  if (l.net_gel <= 0) return '<span class="muted">—</span>';
+  if (l.paid_gel + 0.005 >= l.net_gel) return '<span class="tag pay-done">გადახდილია</span>';
+  const edit = l.paid_gel <= 0.005 ? ' <button class="link" data-action="edit-commission" title="საკომისიოს შესწორება">✎</button>' : '';
+  return `${l.paid_gel > 0.005 ? '<span class="tag pay-part">ნაწილობრივ</span>' : '<span class="tag pay-open">გადაუხდელი</span>'}${edit}`;
+}
+
+function editCommission(line) {
+  const form = openDialog({
+    title: `${esc(line.label)} — საკომისიოს შესწორება`,
+    body: `
+      <p class="hint">შეკვეთა ${dateLabel(line.date)}: ${line.quantity} ც., ${gel(line.price)}. ეს საკომისიო ჯერ არ არის გადახდილი, ამიტომ მისი შეცვლა შეიძლება.
+        ცვლილება ჩაიწერება შესწორებების სიაში.</p>
+      <label>ახალი საკომისიო % <input name="pct" type="number" min="0" max="100" step="0.1" value="${line.pct}" required></label>
+      <p class="hint" id="edit-preview"></p>
+      <label>მიზეზი <input name="note" placeholder="მაგ. არასწორი ნაწილი ურჩია"></label>`,
+    submit: 'შენახვა',
+    async onSubmit(f) {
+      await api('PATCH', `/api/sale-items/${line.item_id}/commission`, { commission_pct: f.elements.pct.value, note: f.elements.note.value });
+      return 'საკომისიო შესწორდა';
+    },
+  });
+  const preview = () => {
+    const amount = Math.round(line.price * (Number(form.elements.pct.value) || 0)) / 100;
+    $('#edit-preview').textContent = `${gel(line.amount)} → ${gel(amount)} (${amount - line.amount >= 0 ? '+' : ''}${gel(amount - line.amount)})`;
+  };
+  form.elements.pct.addEventListener('input', preview);
+  preview();
+  form.elements.pct.select();
+}
+
 $('#referrer-detail').addEventListener('click', async (e) => {
   const action = e.target.dataset.action;
   if (!action || !detail) return;
+  if (action === 'edit-commission') {
+    const id = Number(e.target.closest('tr').dataset.item);
+    return editCommission(detail.months.flatMap((m) => m.lines).find((l) => l.kind === 'sale' && l.item_id === id));
+  }
   const r = { ...detail.referrer, owed: detail.owed };
   if (action === 'back') { openId = null; showReferrers(); }
   if (action === 'pay') paymentDialog(r);

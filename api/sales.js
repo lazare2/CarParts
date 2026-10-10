@@ -2,7 +2,7 @@
 import { db } from '../db.js';
 import { route } from './router.js';
 import {
-  HttpError, round2, transaction, insertId, textIn, dateIn, currencyIn, amountIn, pctIn, posInt, toGel,
+  HttpError, round2, today, transaction, insertId, textIn, dateIn, currencyIn, amountIn, pctIn, posInt, toGel,
   getReferrer, getLot, must, partInfo,
 } from './util.js';
 
@@ -44,7 +44,7 @@ route('POST', '/api/sales', (body) => {
 
 // How much of each order line's commission is already paid to the repairman: payments are matched
 // to commissions oldest first (a take-back without a known order counts like money paid back).
-function paidCommission() {
+export function paidCommission() {
   const capacity = new Map();
   for (const p of db.prepare('SELECT referrer_id, SUM(amount_gel) AS paid FROM referrer_payments GROUP BY referrer_id').all())
     capacity.set(p.referrer_id, p.paid);
@@ -105,4 +105,24 @@ route('DELETE', '/api/sales/:id', (body, id) => {
     db.prepare('DELETE FROM sales WHERE id = ?').run(id);
   });
   return { ok: true };
+});
+
+// correct the commission % of an order line, only while that commission is not paid to the repairman yet
+route('PATCH', '/api/sale-items/:id/commission', (body, id) => {
+  const item = must(db.prepare(`SELECT si.*, s.referrer_id, s.exchange_id FROM sale_items si JOIN sales s ON s.id = si.sale_id
+    WHERE si.id = ?`).get(id), 'შეკვეთის ნაწილი ვერ მოიძებნა');
+  if (!item.referrer_id) throw new HttpError(400, 'ეს შეკვეთა ხელოსანს არ უკავშირდება');
+  if (item.exchange_id) throw new HttpError(409, 'ეს გაცვლის ხაზია — მისი საკომისიო გაცვლისას დაითვალა');
+  if ((paidCommission().get(item.id) ?? 0) > 0.005)
+    throw new HttpError(409, 'ამ ხაზის საკომისიო უკვე გადახდილია (ან ნაწილობრივ). შესწორება შეუძლებელია — გამოიყენეთ „დაბრუნება“.');
+  const pct = pctIn(body.commission_pct);
+  const amount = round2((item.price_gel * pct) / 100);
+  const back = db.prepare('SELECT COALESCE(SUM(commission_back_gel), 0) AS b FROM returns WHERE sale_item_id = ?').get(id).b;
+  if (amount + 0.001 < back) throw new HttpError(400, `დაბრუნებისას უკვე ჩამოიჭრა ${round2(back)} ₾, ახალი საკომისიო ამაზე ნაკლები ვერ იქნება`);
+  transaction(() => {
+    db.prepare('UPDATE sale_items SET commission_pct = ?, commission_gel = ? WHERE id = ?').run(pct, amount, id);
+    insertId('INSERT INTO commission_edits (sale_item_id, date, old_pct, new_pct, old_gel, new_gel, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, dateIn(body.date ?? today()), item.commission_pct, pct, item.commission_gel, amount, textIn(body.note)]);
+  });
+  return { ok: true, commission_gel: amount };
 });

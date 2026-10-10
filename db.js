@@ -313,6 +313,20 @@ function migrateReturns() {
   db.exec('PRAGMA foreign_keys = ON');
 }
 
+// corrections of an order line's commission (allowed while it is not paid yet), kept as history
+db.exec(`
+  CREATE TABLE IF NOT EXISTS commission_edits (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_item_id INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+    date         TEXT NOT NULL,
+    old_pct      REAL NOT NULL,
+    new_pct      REAL NOT NULL,
+    old_gel      REAL NOT NULL,
+    new_gel      REAL NOT NULL,
+    note         TEXT NOT NULL DEFAULT ''
+  );
+`);
+
 db.exec('DROP VIEW IF EXISTS lot_stats');
 if (!columnsOf('returns').includes('lot_id')) migrateReturns();
 if (!columnsOf('exchanges').includes('owed_before_gel')) db.exec('ALTER TABLE exchanges ADD COLUMN owed_before_gel REAL');
