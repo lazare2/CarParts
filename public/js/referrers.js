@@ -1,8 +1,9 @@
 // ხელოსნები: repairmen who send customers, their commissions per month, and payments to them
 import {
   $, esc, gel, fmt, dateLabel, monthLabel, today, api, act, showMessage, onRefresh, visible, openDialog,
-  stat, moneyField, readMoney, moneyLabel,
+  stat, moneyField, readMoney, moneyLabel, RESPONSIBLE_SHORT,
 } from './core.js';
+import { commissionText } from './returns.js';
 
 let openId = null;
 let detail = null;
@@ -105,6 +106,7 @@ function paymentDialog(r) {
 async function loadDetail() {
   try {
     detail = await api('GET', `/api/referrers/${openId}`);
+    detail.cases = await api('GET', `/api/exchanges?referrer_id=${openId}`);
   } catch (err) {
     openId = null;
     showMessage(err.message, false);
@@ -139,13 +141,27 @@ async function loadDetail() {
           <tbody>${m.lines.map((l) => `
             <tr class="${l.kind === 'return' ? 'return-row' : ''}">
               <td>${dateLabel(l.date)}</td>
-              <td>${esc(l.label)}${l.damaged ? ' <span class="tag bad">დაზიანებული</span>' : ''}${l.kind === 'return' ? ' <span class="tag">დაბრუნება</span>' : ''}</td>
+              <td>${esc(l.label)}${l.damaged ? ' <span class="tag bad">დაზიანებული</span>' : ''}${l.kind === 'return' ? ' <span class="tag">დაბრუნება</span>' : ''}${l.exchange_id && l.kind === 'sale' ? ' <span class="tag">გაცვლა</span>' : ''}</td>
               <td class="num">${l.quantity}</td><td class="num">${gel(l.price)}</td>
-              <td class="num">${fmt(l.pct)}%</td><td class="num">${gel(l.amount)}</td>
+              <td class="num">${l.exchange_id && l.kind === 'sale' ? `${fmt(l.pct)}% სხვაობაზე` : `${fmt(l.pct)}%`}</td><td class="num">${gel(l.amount)}</td>
             </tr>`).join('')}
           </tbody>
         </table>
       </details>`).join('') : '<p class="hint">ამ ხელოსნის გამოგზავნილი გაყიდვები ჯერ არ არის.</p>'}
+
+    <h3>დაბრუნებები და გაცვლები <span class="muted">(ამ ხელოსნის გამოგზავნილი მყიდველები)</span></h3>
+    ${detail.cases.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>თარიღი</th><th>დაბრუნდა</th><th>სანაცვლოდ აიღო</th><th>ვისი მიზეზით</th><th class="num">საკომისიოზე გავლენა</th></tr></thead>
+        <tbody>${detail.cases.map((h) => `
+          <tr><td>${dateLabel(h.date)}</td>
+            <td>${h.returned.map((x) => `${esc(x.label)}${x.quantity > 1 ? ` ×${x.quantity}` : ''}${x.condition === 'damaged' ? ' <span class="tag bad">დაზ.</span>' : ''}`).join('<br>')}</td>
+            <td>${h.taken.map((x) => esc(x.label)).join('<br>') || '<span class="muted">—</span>'}</td>
+            <td>${RESPONSIBLE_SHORT[h.responsible ?? '']}${h.note ? `<span class="details">${esc(h.note)}</span>` : ''}</td>
+            <td class="num">${commissionText(h)}</td></tr>`).join('')}
+        </tbody></table></div>
+      <p class="hint">„არ ჩამოიჭრა / არ დაემატა“ ნიშნავს, რომ შემთხვევა ჩაწერილია, მაგრამ საკომისიო არ შეცვლილა.</p>`
+      : '<p class="hint">ამ ხელოსნის მყიდველებს ჯერ არაფერი დაუბრუნებიათ.</p>'}
 
     <h3>გადახდები</h3>
     ${detail.payments.length ? `

@@ -18,6 +18,7 @@
     <nav>
       <button class="tab active" data-tab="parts">ნაწილები</button>
       <button class="tab" data-tab="stock">მარაგი და კონტეინერები</button>
+      <button class="tab" data-tab="returns">დაბრუნება</button>
       <button class="tab" data-tab="referrers">ხელოსნები</button>
       <button class="tab" data-tab="finance">ფინანსები</button>
       <button class="tab" data-tab="admin">ადმინი</button>
@@ -77,6 +78,15 @@
       <div id="inv-totals" class="inv-totals"></div>
       <div id="inv-list" class="table-wrap"></div>
       <p id="inv-empty" class="empty" hidden></p>
+    </section>
+
+    <!-- დაბრუნება / გაცვლა -->
+    <section id="returns" class="panel" hidden>
+      <div class="toolbar"><h2 class="grow">დაბრუნება / გაცვლა</h2></div>
+      <p class="hint">მყიდველმა ნაწილი დააბრუნა? აირჩიეთ შეკვეთა (ან შეკვეთის გარეშე), მონიშნეთ რა დაბრუნდა და, თუ სხვა ნაწილი აიღო სანაცვლოდ, დაამატეთ ის. პროგრამა დაითვლის, ვინ ვის რამდენს უხდის.</p>
+      <div id="ret-form" class="ret-form"></div>
+      <h3>ბოლო დაბრუნებები და გაცვლები</h3>
+      <div id="ret-history" class="table-wrap"></div>
     </section>
 
     <!-- ხელოსნები -->

@@ -174,7 +174,8 @@ db.exec(`
     referrer_id INTEGER REFERENCES referrers(id),
     currency    TEXT NOT NULL DEFAULT 'GEL' CHECK (currency IN ('GEL', 'USD')),
     rate        REAL,
-    note        TEXT NOT NULL DEFAULT ''
+    note        TEXT NOT NULL DEFAULT '',
+    exchange_id INTEGER REFERENCES exchanges(id)   -- the new parts taken in an exchange
   );
   CREATE INDEX IF NOT EXISTS sales_date ON sales(date);
   CREATE INDEX IF NOT EXISTS sales_referrer ON sales(referrer_id);
@@ -193,9 +194,30 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS sale_items_sale ON sale_items(sale_id);
   CREATE INDEX IF NOT EXISTS sale_items_lot ON sale_items(lot_id);
 
+  -- one visit where a customer brought parts back (and maybe took others instead)
+  CREATE TABLE IF NOT EXISTS exchanges (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    date                 TEXT NOT NULL,
+    sale_id              INTEGER REFERENCES sales(id),          -- the original order, if known
+    referrer_id          INTEGER REFERENCES referrers(id),
+    responsible          TEXT NOT NULL DEFAULT '' CHECK (responsible IN ('', 'us', 'referrer', 'customer')),
+    currency             TEXT NOT NULL DEFAULT 'GEL' CHECK (currency IN ('GEL', 'USD')),
+    rate                 REAL,
+    credit_gel           REAL NOT NULL DEFAULT 0,               -- value of the parts brought back
+    new_gel              REAL NOT NULL DEFAULT 0,               -- value of the parts taken instead
+    cash_gel             REAL NOT NULL DEFAULT 0,               -- new - credit: + customer paid us, - we paid the customer
+    commission_pct       REAL NOT NULL DEFAULT 0,
+    commission_delta_gel REAL NOT NULL DEFAULT 0,               -- how the repairman's commission would change
+    commission_applied   INTEGER NOT NULL DEFAULT 0 CHECK (commission_applied IN (0, 1)),
+    note                 TEXT NOT NULL DEFAULT ''
+  );
+
   CREATE TABLE IF NOT EXISTS returns (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    sale_item_id        INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+    exchange_id         INTEGER REFERENCES exchanges(id),
+    sale_item_id        INTEGER REFERENCES sale_items(id) ON DELETE CASCADE,   -- null when the order is not known
+    lot_id              INTEGER NOT NULL REFERENCES lots(id),                  -- where the unit went back to
+    referrer_id         INTEGER REFERENCES referrers(id),
     date                TEXT    NOT NULL,
     quantity            INTEGER NOT NULL CHECK (quantity > 0),
     condition           TEXT    NOT NULL CHECK (condition IN ('good', 'damaged')),
@@ -206,20 +228,6 @@ db.exec(`
     commission_back_gel REAL    NOT NULL DEFAULT 0 CHECK (commission_back_gel >= 0),
     note                TEXT    NOT NULL DEFAULT ''
   );
-  CREATE INDEX IF NOT EXISTS returns_item ON returns(sale_item_id);
-
-  -- per lot: units sold (minus returned), money in (minus refunds) and commissions (minus give-backs)
-  DROP VIEW IF EXISTS lot_stats;
-  CREATE VIEW lot_stats AS
-  SELECT l.id AS lot_id, l.container_id, l.part_id, l.received, l.good, l.damaged,
-         COALESCE(s.qty, 0)        - COALESCE(r.qty, 0)    AS sold,
-         COALESCE(s.revenue, 0)    - COALESCE(r.refund, 0) AS revenue,
-         COALESCE(s.commission, 0) - COALESCE(r.back, 0)   AS commission
-  FROM lots l
-  LEFT JOIN (SELECT lot_id, SUM(quantity) AS qty, SUM(price_gel) AS revenue, SUM(commission_gel) AS commission
-             FROM sale_items GROUP BY lot_id) s ON s.lot_id = l.id
-  LEFT JOIN (SELECT si.lot_id, SUM(r.quantity) AS qty, SUM(r.refund_gel) AS refund, SUM(r.commission_back_gel) AS back
-             FROM returns r JOIN sale_items si ON si.id = r.sale_item_id GROUP BY si.lot_id) r ON r.lot_id = l.id;
 `);
 
 // Version 2 stock had no containers: put everything into one container "ძველი მარაგი"
@@ -264,6 +272,67 @@ function migrateFromV2() {
     throw err;
   }
 }
+
+// Version 2.1 returns were always tied to a sale item. Now a return also knows its lot and
+// repairman directly (so a part can be taken back without knowing the order) and its exchange.
+function migrateReturns() {
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE returns_new (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        exchange_id         INTEGER REFERENCES exchanges(id),
+        sale_item_id        INTEGER REFERENCES sale_items(id) ON DELETE CASCADE,
+        lot_id              INTEGER NOT NULL REFERENCES lots(id),
+        referrer_id         INTEGER REFERENCES referrers(id),
+        date                TEXT    NOT NULL,
+        quantity            INTEGER NOT NULL CHECK (quantity > 0),
+        condition           TEXT    NOT NULL CHECK (condition IN ('good', 'damaged')),
+        refund_amount       REAL    NOT NULL CHECK (refund_amount >= 0),
+        refund_currency     TEXT    NOT NULL DEFAULT 'GEL' CHECK (refund_currency IN ('GEL', 'USD')),
+        refund_rate         REAL,
+        refund_gel          REAL    NOT NULL CHECK (refund_gel >= 0),
+        commission_back_gel REAL    NOT NULL DEFAULT 0 CHECK (commission_back_gel >= 0),
+        note                TEXT    NOT NULL DEFAULT ''
+      );
+      INSERT INTO returns_new (id, sale_item_id, lot_id, referrer_id, date, quantity, condition, refund_amount,
+                               refund_currency, refund_rate, refund_gel, commission_back_gel, note)
+        SELECT r.id, r.sale_item_id, si.lot_id, s.referrer_id, r.date, r.quantity, r.condition, r.refund_amount,
+               r.refund_currency, r.refund_rate, r.refund_gel, r.commission_back_gel, r.note
+        FROM returns r JOIN sale_items si ON si.id = r.sale_item_id JOIN sales s ON s.id = si.sale_id;
+      DROP TABLE returns;
+      ALTER TABLE returns_new RENAME TO returns;
+    `);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  db.exec('PRAGMA foreign_keys = ON');
+}
+
+db.exec('DROP VIEW IF EXISTS lot_stats');
+if (!columnsOf('returns').includes('lot_id')) migrateReturns();
+if (!columnsOf('sales').includes('exchange_id')) db.exec('ALTER TABLE sales ADD COLUMN exchange_id INTEGER REFERENCES exchanges(id)');
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS returns_item ON returns(sale_item_id);
+  CREATE INDEX IF NOT EXISTS returns_lot ON returns(lot_id);
+  CREATE INDEX IF NOT EXISTS returns_exchange ON returns(exchange_id);
+
+  -- per lot: units sold (minus returned), money in (minus refunds) and commissions (minus give-backs)
+  CREATE VIEW lot_stats AS
+  SELECT l.id AS lot_id, l.container_id, l.part_id, l.received, l.good, l.damaged,
+         COALESCE(s.qty, 0)        - COALESCE(r.qty, 0)    AS sold,
+         COALESCE(s.revenue, 0)    - COALESCE(r.refund, 0) AS revenue,
+         COALESCE(s.commission, 0) - COALESCE(r.back, 0)   AS commission
+  FROM lots l
+  LEFT JOIN (SELECT lot_id, SUM(quantity) AS qty, SUM(price_gel) AS revenue, SUM(commission_gel) AS commission
+             FROM sale_items GROUP BY lot_id) s ON s.lot_id = l.id
+  LEFT JOIN (SELECT lot_id, SUM(quantity) AS qty, SUM(refund_gel) AS refund, SUM(commission_back_gel) AS back
+             FROM returns GROUP BY lot_id) r ON r.lot_id = l.id;
+`);
 
 if (hasV2Data) migrateFromV2();
 else if (tableExists('purchases')) db.exec('DROP TABLE purchases');   // (empty v2 database)

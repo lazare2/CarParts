@@ -12,15 +12,16 @@ function period(query) {
 }
 
 const saleItemRows = () => db.prepare(`
-  SELECT s.id AS sale_id, s.date, s.referrer_id, s.currency, s.rate, s.note, si.id, si.quantity, si.damaged,
+  SELECT s.id AS sale_id, s.date, s.referrer_id, s.currency, s.rate, s.note, s.exchange_id, si.id, si.quantity, si.damaged,
          si.price_amount, si.price_gel, si.commission_pct, si.commission_gel, l.part_id, l.container_id
   FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN lots l ON l.id = si.lot_id
   ORDER BY s.date DESC, s.id DESC, si.id`).all();
 
 const returnRows = () => db.prepare(`
   SELECT r.id, r.date, r.quantity, r.condition, r.refund_gel, r.refund_amount, r.refund_currency, r.refund_rate,
-         r.commission_back_gel, r.note, r.sale_item_id, s.id AS sale_id, s.date AS sale_date, s.referrer_id, l.part_id, l.container_id
-  FROM returns r JOIN sale_items si ON si.id = r.sale_item_id JOIN sales s ON s.id = si.sale_id JOIN lots l ON l.id = si.lot_id
+         r.commission_back_gel, r.note, r.sale_item_id, r.exchange_id, si.sale_id, s.date AS sale_date, r.referrer_id,
+         l.part_id, l.container_id
+  FROM returns r JOIN lots l ON l.id = r.lot_id LEFT JOIN sale_items si ON si.id = r.sale_item_id LEFT JOIN sales s ON s.id = si.sale_id
   ORDER BY r.date DESC, r.id DESC`).all();
 
 // continuous list of days or months for the chart
@@ -64,7 +65,7 @@ route('GET', '/api/finance/overview', (query) => {
 
   for (const i of items.filter((x) => p.inside(x.date))) {
     totals.sales += i.price_gel; totals.commissions += i.commission_gel; totals.units += i.quantity;
-    receipts.add(i.sale_id);
+    if (!i.exchange_id) receipts.add(i.sale_id);
     const b = bucket(i.date); if (b) { b.sales += i.price_gel; b.commissions += i.commission_gel; }
   }
   for (const r of returns.filter((x) => p.inside(x.date))) {
@@ -100,8 +101,9 @@ route('GET', '/api/finance/overview', (query) => {
   const monthOf = (r, d) => (r.months[month(d)] ??= { visits: new Set(), commission: 0, sales: 0 });
   for (const i of items.filter((x) => x.referrer_id && p.inside(x.date))) {
     const r = refs.get(i.referrer_id);
-    r.visits.add(i.sale_id); r.units += i.quantity; r.sales += i.price_gel; r.commission += i.commission_gel;
-    const m = monthOf(r, i.date); m.visits.add(i.sale_id); m.commission += i.commission_gel; m.sales += i.price_gel;
+    if (!i.exchange_id) r.visits.add(i.sale_id);
+    r.units += i.quantity; r.sales += i.price_gel; r.commission += i.commission_gel;
+    const m = monthOf(r, i.date); if (!i.exchange_id) m.visits.add(i.sale_id); m.commission += i.commission_gel; m.sales += i.price_gel;
   }
   for (const x of returns.filter((y) => y.referrer_id && p.inside(y.date))) {
     const r = refs.get(x.referrer_id);
@@ -145,7 +147,7 @@ route('GET', '/api/finance/ledger', (query) => {
 
   const entries = [];
   const sales = new Map();
-  for (const i of saleItemRows().filter((x) => p.inside(x.date))) {
+  for (const i of saleItemRows().filter((x) => p.inside(x.date) && !x.exchange_id)) {
     if (!sales.has(i.sale_id)) {
       const entry = {
         key: `sale-${i.sale_id}`, type: 'sale', date: i.date, sale_id: i.sale_id, amount: 0, commission: 0,
@@ -165,12 +167,26 @@ route('GET', '/api/finance/ledger', (query) => {
     entry.amount = round2(entry.amount + i.price_gel);
     entry.commission = round2(entry.commission + i.commission_gel);
   }
-  for (const r of returnRows().filter((x) => p.inside(x.date))) {
+  for (const r of returnRows().filter((x) => p.inside(x.date) && !x.exchange_id)) {
     entries.push({
       key: `return-${r.id}`, type: 'refund', date: r.date, amount: -r.refund_gel, referrer_id: r.referrer_id,
       referrer: names.get(r.referrer_id) ?? null, container_id: r.container_id, container: containerNames.get(r.container_id),
       label: info.get(r.part_id).label, quantity: r.quantity, condition: r.condition, note: r.note, sale_date: r.sale_date,
       commission_back: r.commission_back_gel, currency: r.refund_currency, original: r.refund_amount, rate: r.refund_rate,
+    });
+  }
+  const lotInfo = new Map(db.prepare('SELECT id, part_id, container_id FROM lots').all().map((l) => [l.id, l]));
+  const lotLabel = (lotId) => info.get(lotInfo.get(lotId).part_id).label;
+  for (const e of db.prepare('SELECT * FROM exchanges').all().filter((x) => p.inside(x.date))) {
+    const back = db.prepare('SELECT lot_id, quantity, condition FROM returns WHERE exchange_id = ?').all(e.id);
+    const taken = db.prepare('SELECT si.lot_id, si.quantity FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.exchange_id = ?').all(e.id);
+    entries.push({
+      key: `exchange-${e.id}`, type: 'exchange', date: e.date, amount: e.cash_gel, exchange_id: e.id,
+      referrer_id: e.referrer_id, referrer: names.get(e.referrer_id) ?? null, note: e.note, responsible: e.responsible,
+      credit: e.credit_gel, new_value: e.new_gel, commission_delta: e.commission_delta_gel, commission_applied: !!e.commission_applied,
+      container_ids: [...new Set([...back, ...taken].map((x) => lotInfo.get(x.lot_id).container_id))],
+      returned: back.map((b) => ({ label: lotLabel(b.lot_id), quantity: b.quantity, condition: b.condition })),
+      taken: taken.map((t) => ({ label: lotLabel(t.lot_id), quantity: t.quantity })),
     });
   }
   for (const pay of db.prepare('SELECT * FROM referrer_payments').all().filter((x) => p.inside(x.date))) {

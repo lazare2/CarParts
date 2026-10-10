@@ -218,3 +218,12 @@ export function readMoney(form, name) {
   if (currency === 'USD') saveRate(get('rate'));
   return { amount: get('amount'), currency, rate: currency === 'USD' ? get('rate') : null };
 }
+
+// who caused a return
+export const RESPONSIBLE = {
+  us: 'ჩვენ (ნაწილი დაზიანებული იყო)',
+  referrer: 'ხელოსანი (არასწორი ნაწილი ურჩია)',
+  customer: 'მყიდველი (გადაიფიქრა / არ მოერგო)',
+  '': 'არ არის მითითებული',
+};
+export const RESPONSIBLE_SHORT = { us: 'ჩვენ', referrer: 'ხელოსანი', customer: 'მყიდველი', '': '—' };

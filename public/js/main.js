@@ -4,9 +4,10 @@ import './admin.js';
 import { showStock } from './inventory.js';
 import { showReferrers } from './referrers.js';
 import { showFinance } from './finance.js';
+import { showReturns } from './returns.js';
 
 // views that load their own data when opened
-const loaders = { stock: showStock, referrers: showReferrers, finance: showFinance };
+const loaders = { stock: showStock, returns: showReturns, referrers: showReferrers, finance: showFinance };
 
 $$('.tab').forEach((btn) =>
   btn.addEventListener('click', () => {

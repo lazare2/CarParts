@@ -342,3 +342,41 @@ details.card[open] > summary { border-bottom: 1px solid var(--border); backgroun
   details.card > summary { flex-wrap: wrap; }
 }
 .focus-link { font-size: 11.5px; margin-top: 2px; padding: 0; }
+
+/* ---------- დაბრუნება / გაცვლა ---------- */
+.ret-form { border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 18px 16px; margin-bottom: 18px; }
+.ret-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-bottom: 1px dashed var(--border); }
+.ret-step .seg { margin-bottom: 10px; }
+.order-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 340px; overflow: auto; }
+.order-pick { display: grid; grid-template-columns: 90px minmax(0, 1fr) 200px 110px; gap: 12px; align-items: center; text-align: left;
+  background: var(--soft); color: var(--text); border: 1px solid var(--border); white-space: normal; }
+.order-pick:hover { background: var(--primary-soft); border-color: #93c5fd; }
+.order-pick b { text-align: right; }
+.op-date { font-weight: 600; }
+.order-chosen { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; background: var(--primary-soft); border: 1px solid #bfdbfe;
+  border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.ret-table { margin-top: 6px; }
+.ret-table input, .ret-table select { max-width: 200px; }
+.ret-table .r-qty { width: 80px; }
+.add-line { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(170px, 1.3fr) 80px minmax(150px, 1fr) auto; gap: 8px; align-items: center; }
+#loose-add.add-line { grid-template-columns: minmax(200px, 2fr) minmax(170px, 1.3fr) 70px minmax(170px, 1fr) minmax(120px, 1fr) auto; }
+.ret-details { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin: 10px 0; }
+.ret-details label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 150px; }
+.ret-details label.grow { flex: 1; }
+#ret-responsible { margin-top: 6px; }
+.ret-summary { padding-top: 14px; }
+.sum-grid { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 10px; }
+.sum-grid > div { background: var(--soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+.sum-grid span { display: block; font-size: 12px; color: var(--muted); }
+.sum-grid b { font-size: 20px; }
+.sum-result.pay-out { background: var(--red-bg); border-color: #fecaca; }
+.sum-result.pay-out b { color: var(--red); }
+.sum-result.pay-in { background: #dcfce7; border-color: #bbf7d0; }
+.sum-result.pay-in b { color: var(--green-dark); }
+.ref-box { border: 1px solid #ddd6fe; background: #f5f3ff; border-radius: var(--radius); padding: 10px 14px; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ref-box input[type=number] { width: 70px; margin: 0 4px; }
+.ref-box .hint { margin: 0; }
+.ret-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.ret-actions #ret-submit { padding: 9px 22px; font-size: 13.5px; }
+.ret-summary .dlg-error { margin-top: 10px; }
+.ret-history td { vertical-align: top; }

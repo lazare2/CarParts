@@ -125,10 +125,30 @@ try {
   for (const l of lotsArrived(daysAgo(0)).slice(0, 3)) call('POST', `/api/lots/${l.id}/damage`, { quantity: 1, date: daysAgo(int(1, 20)), note: 'შემოწმებისას აღმოჩნდა' });
   const soldItems = db.prepare(`SELECT si.id, si.price_gel, si.quantity, s.date FROM sale_items si JOIN sales s ON s.id = si.sale_id
     WHERE s.referrer_id IS NOT NULL ORDER BY si.id LIMIT 3`).all();
-  soldItems.forEach((it, i) => call('POST', `/api/sale-items/${it.id}/return`, {
-    quantity: 1, condition: i === 1 ? 'good' : 'damaged', date: it.date,
-    refund: { amount: Math.round(it.price_gel / it.quantity), currency: 'GEL' }, note: i === 1 ? 'არ მოერგო' : 'მყიდველმა დაზიანებული დააბრუნა',
+  soldItems.forEach((it, i) => call('POST', '/api/exchanges', {
+    date: it.date, responsible: i === 1 ? 'customer' : 'us', apply_commission: i === 1,
+    returned: [{ sale_item_id: it.id, quantity: 1, condition: i === 1 ? 'good' : 'damaged', credit: Math.round(it.price_gel / it.quantity) }],
+    note: i === 1 ? 'არ მოერგო' : 'მყიდველმა დაზიანებული დააბრუნა',
   }));
+
+  // the repairman recommended the wrong part: the customer swaps it for a pricier one and pays the difference
+  const wrong = db.prepare(`SELECT si.id, si.price_gel, si.quantity, si.lot_id, l.part_id FROM sale_items si JOIN sales s ON s.id = si.sale_id
+    JOIN lots l ON l.id = si.lot_id WHERE s.referrer_id IS NOT NULL AND si.quantity = 1 AND s.exchange_id IS NULL
+    AND si.id NOT IN (SELECT sale_item_id FROM returns WHERE sale_item_id IS NOT NULL) ORDER BY s.date DESC LIMIT 1`).get();
+  if (wrong) {
+    const swap = lotsArrived(daysAgo(0)).find((l) => l.part_id !== wrong.part_id && unitValue.get(l.part_id) > unitValue.get(wrong.part_id));
+    if (swap) call('POST', '/api/exchanges', {
+      date: daysAgo(1), responsible: 'referrer', apply_commission: true, note: 'ხელოსანმა არასწორი ნაწილი ურჩია',
+      returned: [{ sale_item_id: wrong.id, quantity: 1, condition: 'good', credit: wrong.price_gel }],
+      new_items: [{ lot_id: swap.id, quantity: 1, price: Math.round(unitValue.get(swap.part_id) * 1.1) }],
+    });
+  }
+  // a customer brings a part back but the order is not known
+  const anySold = db.prepare('SELECT lot_id FROM lot_stats WHERE sold > 0 ORDER BY lot_id LIMIT 1').get();
+  if (anySold) call('POST', '/api/exchanges', {
+    date: daysAgo(0), responsible: 'customer', note: 'შეკვეთა არ ახსოვს',
+    returned: [{ lot_id: anySold.lot_id, quantity: 1, condition: 'good', credit: 50 }],
+  });
 
   // a damaged unit sold cheaply through a repairman, and a sale paid in dollars
   const now = call('GET', '/api/catalog');
@@ -158,4 +178,4 @@ try {
 
 const count = (t) => db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
 console.log(`დაემატა: ${count('containers')} კონტეინერი, ${count('lots')} ნაწილი კონტეინერებში, ${count('sales')} გაყიდვა, ` +
-  `${count('referrers')} ხელოსანი, ${count('returns')} დაბრუნება.`);
+  `${count('referrers')} ხელოსანი, ${count('exchanges')} დაბრუნება/გაცვლა.`);

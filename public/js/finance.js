@@ -1,9 +1,9 @@
 // ფინანსები: overview (numbers, chart, containers, repairmen) and the list of income/payments, for a chosen period
 import {
-  $, $$, esc, gel, fmt, dateLabel, monthLabel, today, MONTHS, api, act, onRefresh, visible, openDialog, stat,
-  moneyField, readMoney, moneyLabel,
+  $, $$, esc, gel, fmt, dateLabel, monthLabel, today, MONTHS, api, act, onRefresh, visible, stat, moneyLabel,
 } from './core.js';
 import { barChart } from './charts.js';
+import { openReturnFor } from './returns.js';
 
 let sub = 'overview';
 const now = today();
@@ -150,7 +150,7 @@ async function loadOverview() {
 
 // ---------- income and payments ----------
 
-const TYPES = { sale: 'გაყიდვა', refund: 'დაბრუნება', payment: 'ხელოსნის გადახდა', container: 'კონტეინერი' };
+const TYPES = { sale: 'გაყიდვა', exchange: 'დაბრუნება / გაცვლა', refund: 'ძველი დაბრუნება', payment: 'ხელოსნის გადახდა', container: 'კონტეინერი' };
 
 async function loadLedger() {
   ledger = await api('GET', `/api/finance/ledger?${query()}`);
@@ -197,14 +197,22 @@ function visibleEntries() {
     let items = e.items;
     let amount = e.amount;
     if (cont) {
-      if (e.type === 'payment') return null;
+      if (e.type === 'exchange') {
+    const list = (arr) => arr.map((x) => `${esc(x.label)}${x.quantity > 1 ? ` ×${x.quantity}` : ''}`).join(', ');
+    return `დაბრუნდა: ${list(e.returned)}${e.taken.length ? `<br>აიღო: ${list(e.taken)}` : ''}
+      <span class="details">${e.amount < 0 ? `მყიდველს დაუბრუნდა ${gel(-e.amount)}` : e.amount > 0 ? `მყიდველმა დაამატა ${gel(e.amount)}` : 'თანაბარი გაცვლა'}${e.note ? ` · ${esc(e.note)}` : ''}</span>`;
+  }
+  if (e.type === 'payment') return null;
       if (e.type === 'sale') {
         items = e.items.filter((i) => i.container_id === cont);
         if (!items.length) return null;
         amount = Math.round(items.reduce((s, i) => s + i.price_gel, 0) * 100) / 100;
+      } else if (e.type === 'exchange') {
+        if (!e.container_ids.includes(cont)) return null;
       } else if (e.container_id !== cont) return null;
     }
-    const text = [e.label, e.referrer, e.note, e.container, ...(items ?? []).map((i) => `${i.label} ${i.container}`)].join(' ').toLowerCase();
+    const text = [e.label, e.referrer, e.note, e.container, ...(items ?? []).map((i) => `${i.label} ${i.container}`),
+      ...(e.returned ?? []).map((r) => r.label), ...(e.taken ?? []).map((t) => t.label)].join(' ').toLowerCase();
     if (filters.q && !text.includes(filters.q)) return null;
     return { ...e, items, amount };
   }).filter(Boolean);
@@ -217,6 +225,11 @@ function describe(e) {
       ${e.commission ? `<span class="details">საკომისიო: ${gel(e.commission)}</span>` : ''}`;
   }
   if (e.type === 'refund') return `${esc(e.label)} ×${e.quantity} <span class="details">${e.condition === 'damaged' ? 'დაზიანებული' : 'კარგი'} · გაიყიდა ${dateLabel(e.sale_date)}${e.note ? ` · ${esc(e.note)}` : ''}</span>`;
+  if (e.type === 'exchange') {
+    const list = (arr) => arr.map((x) => `${esc(x.label)}${x.quantity > 1 ? ` ×${x.quantity}` : ''}`).join(', ');
+    return `დაბრუნდა: ${list(e.returned)}${e.taken.length ? `<br>აიღო: ${list(e.taken)}` : ''}
+      <span class="details">${e.amount < 0 ? `მყიდველს დაუბრუნდა ${gel(-e.amount)}` : e.amount > 0 ? `მყიდველმა დაამატა ${gel(e.amount)}` : 'თანაბარი გაცვლა'}${e.note ? ` · ${esc(e.note)}` : ''}</span>`;
+  }
   if (e.type === 'payment') return `საკომისიოს გადახდა${e.note ? `<span class="details">${esc(e.note)}</span>` : ''}`;
   return `კონტეინერი <b>${esc(e.label)}</b>${e.note ? `<span class="details">${esc(e.note)}</span>` : ''}`;
 }
@@ -261,7 +274,7 @@ function saleDetail(e) {
             <td class="num">${gel(i.price_gel)}</td>
             <td class="num">${e.referrer ? `${fmt(i.commission_pct)}% = ${gel(i.commission_gel)}` : ''}</td>
             <td class="num">${i.returned_qty ? `<span class="tag">დაბრუნდა ${i.returned_qty} ც. (${gel(i.refunded_gel)})</span>` : ''}</td>
-            <td class="num">${i.returned_qty < i.quantity ? '<button class="sm secondary" data-action="return">დაბრუნება</button>' : ''}</td>
+            <td class="num">${i.returned_qty < i.quantity ? '<button class="sm secondary" data-action="return" title="დაბრუნების / გაცვლის გვერდზე გადასვლა">დაბრუნება →</button>' : ''}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -287,7 +300,7 @@ $('#fin-ledger').addEventListener('click', (e) => {
     const sale = ledger.find((x) => x.sale_id === saleId);
     if (action === 'cancel' && confirm('გავაუქმო ეს გაყიდვა? ნაწილები მარაგში დაბრუნდება.'))
       act(() => api('DELETE', `/api/sales/${saleId}`), 'გაყიდვა გაუქმდა, ნაწილები მარაგში დაბრუნდა');
-    if (action === 'return') returnDialog(sale, sale.items.find((i) => i.id === Number(e.target.closest('[data-item]').dataset.item)));
+    if (action === 'return') openReturnFor(saleId);
     return;
   }
   const row = e.target.closest('tr.lrow.clickable');
@@ -296,34 +309,3 @@ $('#fin-ledger').addEventListener('click', (e) => {
     renderLedger();
   }
 });
-
-function returnDialog(sale, item) {
-  const left = item.quantity - item.returned_qty;
-  const unitPrice = item.price_gel / item.quantity;
-  const form = openDialog({
-    title: `${esc(item.label)} — დაბრუნება`,
-    body: `
-      <p class="hint">გაიყიდა ${dateLabel(sale.date)}: ${item.quantity} ც., ${gel(item.price_gel)}${sale.referrer ? ` (ხელოსანი: ${esc(sale.referrer)}, ${fmt(item.commission_pct)}%)` : ''}.</p>
-      <label>რამდენი ცალი დაბრუნდა <input name="quantity" type="number" min="1" max="${left}" step="1" value="${left}" required></label>
-      <fieldset class="radios"><legend>მდგომარეობა</legend>
-        <label class="check"><input type="radio" name="condition" value="damaged" checked> დაზიანებული (მარაგში არ გამოჩნდება)</label>
-        <label class="check"><input type="radio" name="condition" value="good"> კარგი (ბრუნდება მარაგში)</label>
-      </fieldset>
-      ${moneyField('refund', 'მყიდველს დაუბრუნდა', { amount: Math.round(unitPrice * left * 100) / 100 })}
-      ${sale.referrer ? '<p class="hint">ხელოსნის საკომისიო ავტომატურად შემცირდება დაბრუნებული თანხის შესაბამისად.</p>' : ''}
-      <label>თარიღი <input name="date" type="date" value="${today()}" required></label>
-      <label>შენიშვნა <input name="note" placeholder="მაგ. ბზარი კორპუსზე"></label>`,
-    submit: 'დაბრუნების ჩაწერა',
-    async onSubmit(f) {
-      await api('POST', `/api/sale-items/${item.id}/return`, {
-        quantity: f.elements.quantity.value, condition: f.elements.condition.value,
-        refund: readMoney(f, 'refund'), date: f.elements.date.value, note: f.elements.note.value,
-      });
-      return 'დაბრუნება ჩაიწერა';
-    },
-  });
-  form.elements.quantity.addEventListener('input', () => {
-    if (form.elements.refund_currency.value === 'GEL')
-      form.elements.refund_amount.value = Math.round(unitPrice * Number(form.elements.quantity.value || 0) * 100) / 100;
-  });
-}

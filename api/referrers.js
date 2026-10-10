@@ -12,14 +12,16 @@ function commissionEntries(referrerId = null) {
   const params = referrerId ? [referrerId] : [];
   const sales = db.prepare(`
     SELECT s.referrer_id, s.id AS sale_id, si.id AS item_id, s.date, l.part_id, si.quantity, si.damaged,
-           si.price_gel AS price, si.commission_pct AS pct, si.commission_gel AS amount, 'sale' AS kind
+           si.price_gel AS price, si.commission_pct AS pct, si.commission_gel AS amount, 'sale' AS kind, s.exchange_id
     FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN lots l ON l.id = si.lot_id
     WHERE s.referrer_id IS NOT NULL ${filter}`).all(...params);
   const returns = db.prepare(`
-    SELECT s.referrer_id, s.id AS sale_id, si.id AS item_id, r.date, l.part_id, r.quantity, si.damaged,
-           -r.refund_gel AS price, si.commission_pct AS pct, -r.commission_back_gel AS amount, 'return' AS kind
-    FROM returns r JOIN sale_items si ON si.id = r.sale_item_id JOIN sales s ON s.id = si.sale_id JOIN lots l ON l.id = si.lot_id
-    WHERE s.referrer_id IS NOT NULL ${filter}`).all(...params);
+    SELECT r.referrer_id, si.sale_id, si.id AS item_id, r.date, l.part_id, r.quantity, COALESCE(si.damaged, 0) AS damaged,
+           -r.refund_gel AS price, COALESCE(si.commission_pct, e.commission_pct, 0) AS pct, -r.commission_back_gel AS amount,
+           'return' AS kind, r.exchange_id
+    FROM returns r JOIN lots l ON l.id = r.lot_id LEFT JOIN sale_items si ON si.id = r.sale_item_id
+    LEFT JOIN exchanges e ON e.id = r.exchange_id
+    WHERE r.referrer_id IS NOT NULL ${filter.replace('s.referrer_id', 'r.referrer_id')}`).all(...params);
   return [...sales, ...returns];
 }
 
@@ -46,7 +48,7 @@ route('GET', '/api/referrers', () => {
     const t = earned.get(e.referrer_id) ?? { total: 0, month: 0, sales: 0, customers: new Set() };
     t.total += e.amount;
     if (month(e.date) === thisMonth) t.month += e.amount;
-    if (e.kind === 'sale') { t.sales += e.price; t.customers.add(e.sale_id); }
+    if (e.kind === 'sale') { t.sales += e.price; if (!e.exchange_id) t.customers.add(e.sale_id); }
     earned.set(e.referrer_id, t);
   }
   const paid = new Map();
@@ -87,7 +89,7 @@ route('GET', '/api/referrers/:id', (body, id) => {
     months: [...months.values()]
       .map((m) => ({
         ...m, earned: round2(m.earned), sales: round2(m.sales),
-        lines: m.lines.sort((a, b) => b.date.localeCompare(a.date) || b.item_id - a.item_id),
+        lines: m.lines.sort((a, b) => b.date.localeCompare(a.date) || (b.item_id ?? 0) - (a.item_id ?? 0)),
       }))
       .sort((a, b) => b.month.localeCompare(a.month)),
     payments,

@@ -2,6 +2,7 @@
 import './catalog.js';
 import './containers.js';
 import './sales.js';
+import './exchanges.js';
 import './referrers.js';
 import './finance.js';
 
