@@ -3,7 +3,7 @@ import {
   $, esc, gel, fmt, dateLabel, monthLabel, today, api, act, showMessage, onRefresh, visible, openDialog,
   stat, moneyField, readMoney, moneyLabel, RESPONSIBLE_SHORT,
 } from './core.js';
-import { commissionText } from './returns.js';
+import { commissionText, canChangeCommission, editCaseCommission } from './returns.js';
 
 let openId = null;
 let detail = null;
@@ -85,12 +85,29 @@ function referrerDialog(r = null) {
   });
 }
 
-function paymentDialog(r) {
+async function paymentDialog(r) {
+  const d = await api('GET', `/api/referrers/${r.id}`);
+  const sl = d.since_last_payment;
   const form = openDialog({
+    wide: true,
     title: `${esc(r.name)} — გადახდა`,
     body: `
-      <p class="hint">ამჟამად გადასახდელია: <b>${gel(r.owed)}</b></p>
-      ${moneyField('amount', 'გადახდილი თანხა', { amount: r.owed > 0 ? r.owed : '' })}
+      <div class="pay-breakdown">
+        <div class="pb-title">რისგან შედგება გადასახდელი (${gel(d.owed)})</div>
+        <table>
+          <tbody>
+            ${sl.last_date ? `<tr><td colspan="2">დარჩენილი ბოლო გადახდის (${dateLabel(sl.last_date)}) შემდეგ</td><td class="num">${gel(sl.carried)}</td></tr>` : ''}
+            ${sl.lines.map((l) => `
+              <tr class="${l.kind === 'adjust' ? 'adjust-row' : l.kind === 'return' ? 'return-row' : ''}">
+                <td>${dateLabel(l.date)}</td>
+                <td>${l.kind === 'sale' ? 'საკომისიო: ' : ''}${esc(l.label)}${l.detail ? `<span class="details">${esc(l.detail)}</span>` : ''}</td>
+                <td class="num">${l.amount > 0 ? '+' : ''}${gel(l.amount)}</td>
+              </tr>`).join('') || '<tr><td colspan="3" class="muted">ბოლო გადახდის შემდეგ ახალი არაფერია.</td></tr>'}
+          </tbody>
+          <tfoot><tr><th colspan="2">სულ გადასახდელი</th><th class="num">${gel(d.owed)}</th></tr></tfoot>
+        </table>
+      </div>
+      ${moneyField('amount', 'გადახდილი თანხა', { amount: d.owed > 0 ? d.owed : '' })}
       <label>თარიღი <input name="date" type="date" value="${today()}" required></label>
       <label>შენიშვნა <input name="note" placeholder="არასავალდებულო"></label>`,
     submit: 'გადახდის ჩაწერა',
@@ -145,11 +162,11 @@ async function loadDetail() {
         <table>
           <thead><tr><th>თარიღი</th><th>ნაწილი</th><th class="num">რაოდ.</th><th class="num">ფასი</th><th class="num">%</th><th class="num">საკომისიო</th><th>სტატუსი</th></tr></thead>
           <tbody>${m.lines.map((l) => `
-            <tr class="${l.kind === 'return' ? 'return-row' : ''}" data-item="${l.item_id ?? ''}" data-kind="${l.kind}">
+            <tr class="${l.kind === 'return' ? 'return-row' : l.kind === 'adjust' ? 'adjust-row' : ''}" data-item="${l.item_id ?? ''}" data-kind="${l.kind}">
               <td>${dateLabel(l.date)}</td>
-              <td>${esc(l.label)}${l.damaged ? ' <span class="tag bad">დაზიანებული</span>' : ''}${l.kind === 'return' ? ' <span class="tag">დაბრუნება</span>' : ''}${l.exchange_id && l.kind === 'sale' ? ' <span class="tag">გაცვლა</span>' : ''}</td>
-              <td class="num">${l.quantity}</td><td class="num">${gel(l.price)}</td>
-              <td class="num">${l.exchange_id && l.kind === 'sale' ? `${fmt(l.pct)}% სხვაობაზე` : `${fmt(l.pct)}%`}</td><td class="num">${gel(l.amount)}${l.edits?.length ? ` <span class="tag" title="${esc(l.edits.map((e) => `${dateLabel(e.date)}: ${fmt(e.old_pct)}% → ${fmt(e.new_pct)}%${e.note ? ` (${e.note})` : ''}`).join('; '))}">შესწორდა</span>` : ''}</td>
+              <td>${esc(l.label)}${l.detail ? `<span class="details">${esc(l.detail)}</span>` : ''}${l.damaged ? ' <span class="tag bad">დაზიანებული</span>' : ''}${l.kind === 'return' ? ' <span class="tag">დაბრუნება</span>' : ''}${l.exchange_id && l.kind === 'sale' ? ' <span class="tag">გაცვლა</span>' : ''}</td>
+              <td class="num">${l.quantity ?? ''}</td><td class="num">${l.kind === 'adjust' ? '' : gel(l.price)}</td>
+              <td class="num">${l.kind === 'adjust' || l.exchange_id ? '' : `${fmt(l.pct)}%`}</td><td class="num">${gel(l.amount)}${l.edits?.length ? ` <span class="tag" title="${esc(l.edits.map((e) => `${dateLabel(e.date)}: ${fmt(e.old_pct)}% → ${fmt(e.new_pct)}%${e.note ? ` (${e.note})` : ''}`).join('; '))}">შესწორდა</span>` : ''}</td>
               <td>${lineStatus(l)}</td>
             </tr>`).join('')}
           </tbody>
@@ -165,7 +182,7 @@ async function loadDetail() {
             <td>${h.returned.map((x) => `${esc(x.label)}${x.quantity > 1 ? ` ×${x.quantity}` : ''}${x.condition === 'damaged' ? ' <span class="tag bad">დაზ.</span>' : ''}`).join('<br>')}</td>
             <td>${h.taken.map((x) => esc(x.label)).join('<br>') || '<span class="muted">—</span>'}</td>
             <td>${RESPONSIBLE_SHORT[h.responsible ?? '']}${h.note ? `<span class="details">${esc(h.note)}</span>` : ''}</td>
-            <td class="num">${commissionText(h)}</td></tr>`).join('')}
+            <td class="num">${commissionText(h)}${canChangeCommission(h) ? `<button class="link change-link" data-change="${h.id}">შეცვლა</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>
       <p class="hint">„არ ჩამოიჭრა / არ დაემატა“ ნიშნავს, რომ შემთხვევა ჩაწერილია, მაგრამ გადასახდელი არ შეცვლილა.</p>`
       : '<p class="hint">ამ ხელოსნის მყიდველებს ჯერ არაფერი დაუბრუნებიათ.</p>'}
@@ -229,6 +246,7 @@ function editCommission(line) {
 }
 
 $('#referrer-detail').addEventListener('click', async (e) => {
+  if (e.target.dataset.change && detail) return editCaseCommission(detail.cases.find((c) => c.id === Number(e.target.dataset.change)));
   const action = e.target.dataset.action;
   if (!action || !detail) return;
   if (action === 'edit-commission') {

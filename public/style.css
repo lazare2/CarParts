@@ -388,3 +388,11 @@ details.card[open] > summary { border-bottom: 1px solid var(--border); backgroun
 .tag.pay-open { background: var(--amber-bg); color: var(--amber); }
 .tag.pay-done { background: #dcfce7; color: #166534; }
 .tag.pay-part { background: #e0f2fe; color: #075985; }
+tr.adjust-row td { background: #f5f3ff; }
+tr.adjust-row td:nth-child(2) { color: #5b21b6; font-weight: 600; }
+.change-link { display: block; margin-left: auto; font-size: 12px; color: var(--primary); }
+#ret-comm-amount { width: 90px; margin: 0 4px; }
+.pay-breakdown { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; max-height: 45vh; overflow: auto; }
+.pb-title { font-weight: 600; padding: 8px 12px; background: var(--soft); border-bottom: 1px solid var(--border); }
+.pay-breakdown td, .pay-breakdown th { padding: 6px 12px; font-size: 12.5px; }
+.pay-breakdown tfoot th { font-size: 13px; color: var(--text); }

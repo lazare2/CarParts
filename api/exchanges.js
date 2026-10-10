@@ -23,6 +23,48 @@ function spread(total, rows, weight, cap = () => Infinity) {
   });
 }
 
+// on/off + the agreed amount (signed like the calculated difference; empty = the calculated difference)
+function decisionIn(ex, apply, amountInput, { strict = true } = {}) {
+  const delta = ex.commission_delta_gel;
+  if (!ex.referrer_id || !delta) return { applied: 0, amount: delta || 0 };
+  let amount = delta;
+  if (amountInput !== '' && amountInput != null) amount = Math.sign(delta) * amountIn(amountInput, 'საკომისიოს თანხა');
+  const applied = apply && amount !== 0 ? 1 : 0;
+  if (applied && delta < 0 && ex.responsible === 'us') {
+    if (!strict) return { applied: 0, amount: round2(amount) };   // when saving a return: simply not applied
+    throw new HttpError(409, 'ნაწილი დაზიანებული იყო (ჩვენი ბრალი) — ხელოსანს საკომისიო არ ჩამოეჭრება');
+  }
+  return { applied, amount: round2(amount) };
+}
+
+// Put the decision onto the records: taken back = on the returned parts (never more than they earned),
+// added = on the parts taken instead. Everything of this case is reset first, so it can be changed later.
+function applyCommission(ex, applied, amount) {
+  const back = db.prepare('SELECT id, sale_item_id, refund_gel FROM returns WHERE exchange_id = ? ORDER BY id').all(ex.id);
+  const sale = db.prepare('SELECT id FROM sales WHERE exchange_id = ?').get(ex.id);
+  const items = sale ? db.prepare('SELECT id, price_gel FROM sale_items WHERE sale_id = ? ORDER BY id').all(sale.id) : [];
+  db.prepare('UPDATE returns SET commission_back_gel = 0 WHERE exchange_id = ?').run(ex.id);
+  if (sale) db.prepare('UPDATE sale_items SET commission_gel = 0, commission_pct = 0 WHERE sale_id = ?').run(sale.id);
+  if (!applied || !amount) return;
+  if (amount < 0) {
+    const cap = (r) => {
+      if (!r.sale_item_id) return Infinity;
+      const it = db.prepare('SELECT commission_gel FROM sale_items WHERE id = ?').get(r.sale_item_id);
+      const taken = db.prepare('SELECT COALESCE(SUM(commission_back_gel), 0) AS b FROM returns WHERE sale_item_id = ?').get(r.sale_item_id).b;
+      return round2(it.commission_gel - taken);
+    };
+    const max = back.reduce((sum, r) => sum + cap(r), 0);
+    if (-amount > max + 0.001) throw new HttpError(400, `ჩამოსაჭრელი თანხა ვერ იქნება ${round2(max)} ₾-ზე მეტი (ამ ნაწილების საკომისიო)`);
+    spread(-amount, back, (r) => r.refund_gel, cap)
+      .forEach((b, i) => db.prepare('UPDATE returns SET commission_back_gel = ? WHERE id = ?').run(b, back[i].id));
+  } else {
+    if (!items.length) throw new HttpError(400, 'დამატება შესაძლებელია მხოლოდ სანაცვლოდ აღებულ ნაწილზე');
+    spread(amount, items, (it) => it.price_gel).forEach((c, i) =>
+      db.prepare('UPDATE sale_items SET commission_gel = ?, commission_pct = ? WHERE id = ?')
+        .run(c, Math.min(100, round2((c / (items[i].price_gel || 1)) * 100)), items[i].id));
+  }
+}
+
 route('POST', '/api/exchanges', (body) => {
   const date = dateIn(body.date);
   const { currency, rate } = currencyIn(body.currency, body.rate, 'დაბრუნება');
@@ -86,16 +128,16 @@ route('POST', '/api/exchanges', (body) => {
   const newGel = round2(newItems.reduce((s, n) => s + toGel(amountIn(n.price, 'ახალი ნაწილის ფასი'), rate), 0));
   // what the commission would change by: + more for a pricier part, - take back for a cheaper one / a plain return
   const delta = referrer ? round2((pct / 100) * (newGel - creditGel)) : 0;
-  // the part was damaged = our fault: the repairman's commission is never taken back for it
-  const allowed = delta > 0 || (delta < 0 && responsible !== 'us');
-  const applied = referrer && allowed && !!body.apply_commission ? 1 : 0;
   const owedBefore = referrer ? owedTo(referrer.id) : null;
+  // the part was damaged = our fault: the repairman's commission is never taken back for it
+  const decision = decisionIn({ referrer_id: referrer?.id, commission_delta_gel: delta, responsible }, !!body.apply_commission, body.commission_amount, { strict: false });
 
   return transaction(() => {
     const exchangeId = insertId(`INSERT INTO exchanges (date, sale_id, referrer_id, responsible, currency, rate, credit_gel, new_gel,
-      cash_gel, commission_pct, commission_delta_gel, commission_applied, note, owed_before_gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cash_gel, commission_pct, commission_delta_gel, commission_applied, note, owed_before_gel, commission_amount_gel, commission_changed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [date, sale?.id ?? null, referrer?.id ?? null, responsible, currency, rate, creditGel, newGel, round2(newGel - creditGel),
-      pct, delta, applied, textIn(body.note), owedBefore]);
+      pct, delta, decision.applied, textIn(body.note), owedBefore, decision.amount, date]);
 
     const returnIds = lines.map((l) => {
       db.prepare(`UPDATE lots SET ${l.condition === 'good' ? 'good = good' : 'damaged = damaged'} + ? WHERE id = ?`).run(l.quantity, l.lot_id);
@@ -113,18 +155,9 @@ route('POST', '/api/exchanges', (body) => {
       addSaleItems(newSaleId, newItems, { rate, pct: () => 0 });
     }
 
-    if (applied && delta < 0) {
-      // take the commission back from the returned parts (never more than they earned)
-      const backs = spread(-delta, lines, (l) => l.creditGel, (l) => (l.item ? l.commissionLeft : Infinity));
-      backs.forEach((b, i) => db.prepare('UPDATE returns SET commission_back_gel = ? WHERE id = ?').run(b, returnIds[i]));
-    }
-    if (applied && delta > 0 && newSaleId) {
-      // extra commission on the pricier new parts
-      const items = db.prepare('SELECT id, price_gel FROM sale_items WHERE sale_id = ?').all(newSaleId);
-      spread(delta, items, (it) => it.price_gel).forEach((c, i) =>
-        db.prepare('UPDATE sale_items SET commission_gel = ?, commission_pct = ? WHERE id = ?').run(c, pct, items[i].id));
-    }
-    return { id: exchangeId, cash_gel: round2(newGel - creditGel), commission_delta: delta, commission_applied: applied };
+    applyCommission({ id: exchangeId }, decision.applied, decision.amount);
+    return { id: exchangeId, cash_gel: round2(newGel - creditGel), commission_delta: delta, commission_applied: decision.applied,
+      commission_amount: decision.amount, returns: returnIds.length, new_sale_id: newSaleId };
   });
 });
 
@@ -140,6 +173,7 @@ route('GET', '/api/exchanges', (query) => {
   const returnsOf = db.prepare('SELECT * FROM returns WHERE exchange_id = ? ORDER BY id');
   const newItemsOf = db.prepare(`SELECT si.* FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.exchange_id = ? ORDER BY si.id`);
   const saleDate = db.prepare('SELECT date FROM sales WHERE id = ?');
+  const logOf = db.prepare('SELECT * FROM exchange_commission_log WHERE exchange_id = ? ORDER BY id');
   const list = db.prepare('SELECT * FROM exchanges ORDER BY date DESC, id DESC').all()
     .filter((e) => !refFilter || e.referrer_id === refFilter)
     .map((e) => {
@@ -152,6 +186,7 @@ route('GET', '/api/exchanges', (query) => {
         taken: taken.map((t) => ({ ...lotLine(t.lot_id), quantity: t.quantity, damaged: !!t.damaged, price_gel: t.price_gel,
           commission_gel: t.commission_gel })),
         can_undo: canUndo(back, taken),
+        commission_log: logOf.all(e.id),
       };
     });
   const legacy = db.prepare('SELECT * FROM returns WHERE exchange_id IS NULL ORDER BY date DESC, id DESC').all()
@@ -203,4 +238,20 @@ route('DELETE', '/api/exchanges/:id', (body, id) => {
     db.prepare('DELETE FROM exchanges WHERE id = ?').run(id);
   });
   return { ok: true };
+});
+
+// change the commission decision of a return/exchange later (on/off and the amount); every change is logged
+route('PATCH', '/api/exchanges/:id/commission', (body, id) => {
+  const ex = must(db.prepare('SELECT * FROM exchanges WHERE id = ?').get(id), 'დაბრუნება ვერ მოიძებნა');
+  if (!ex.referrer_id || !ex.commission_delta_gel) throw new HttpError(400, 'ამ შემთხვევას ხელოსნის საკომისიოზე გავლენა არ აქვს');
+  const decision = decisionIn(ex, !!body.apply, body.amount);
+  transaction(() => {
+    applyCommission(ex, decision.applied, decision.amount);
+    db.prepare('UPDATE exchanges SET commission_applied = ?, commission_amount_gel = ?, commission_changed_at = ? WHERE id = ?')
+      .run(decision.applied, decision.amount, today(), id);
+    db.prepare(`INSERT INTO exchange_commission_log (exchange_id, date, old_applied, new_applied, old_amount, new_amount, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, today(), ex.commission_applied, decision.applied,
+      ex.commission_amount_gel ?? ex.commission_delta_gel, decision.amount, textIn(body.note));
+  });
+  return { ok: true, ...decision };
 });

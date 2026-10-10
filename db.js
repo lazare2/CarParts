@@ -210,7 +210,21 @@ db.exec(`
     commission_delta_gel REAL NOT NULL DEFAULT 0,               -- how the repairman's commission would change
     commission_applied   INTEGER NOT NULL DEFAULT 0 CHECK (commission_applied IN (0, 1)),
     note                 TEXT NOT NULL DEFAULT '',
-    owed_before_gel      REAL                                   -- what we owed the repairman just before
+    owed_before_gel      REAL,                                  -- what we owed the repairman just before
+    commission_amount_gel REAL,                                 -- the agreed change (signed), default = delta
+    commission_changed_at TEXT                                  -- when the commission decision was last made
+  );
+
+  -- every later change of a return's commission decision
+  CREATE TABLE IF NOT EXISTS exchange_commission_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    exchange_id INTEGER NOT NULL REFERENCES exchanges(id) ON DELETE CASCADE,
+    date        TEXT NOT NULL,
+    old_applied INTEGER NOT NULL,
+    new_applied INTEGER NOT NULL,
+    old_amount  REAL,
+    new_amount  REAL,
+    note        TEXT NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS returns (
@@ -329,7 +343,12 @@ db.exec(`
 
 db.exec('DROP VIEW IF EXISTS lot_stats');
 if (!columnsOf('returns').includes('lot_id')) migrateReturns();
-if (!columnsOf('exchanges').includes('owed_before_gel')) db.exec('ALTER TABLE exchanges ADD COLUMN owed_before_gel REAL');
+for (const [col, type] of [['owed_before_gel', 'REAL'], ['commission_amount_gel', 'REAL'], ['commission_changed_at', 'TEXT']])
+  if (!columnsOf('exchanges').includes(col)) db.exec(`ALTER TABLE exchanges ADD COLUMN ${col} ${type}`);
+db.exec(`CREATE TABLE IF NOT EXISTS exchange_commission_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, exchange_id INTEGER NOT NULL REFERENCES exchanges(id) ON DELETE CASCADE,
+    date TEXT NOT NULL, old_applied INTEGER NOT NULL, new_applied INTEGER NOT NULL, old_amount REAL, new_amount REAL,
+    note TEXT NOT NULL DEFAULT '')`);
 if (!columnsOf('sales').includes('exchange_id')) db.exec('ALTER TABLE sales ADD COLUMN exchange_id INTEGER REFERENCES exchanges(id)');
 
 db.exec(`
