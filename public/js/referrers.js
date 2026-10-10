@@ -31,14 +31,15 @@ async function loadList() {
   $('#referrer-table').innerHTML = list.length ? `
     <table>
       <thead><tr><th>სახელი</th><th>ტელეფონი</th><th class="num">ნაგულ. %</th><th class="num">ამ თვეში</th>
-        <th class="num">სულ საკომისიო</th><th class="num">გადახდილი</th><th class="num">გადასახდელი</th><th></th></tr></thead>
+        <th class="num">საკომისიო გაყიდვებიდან</th><th class="num">დაბრ. / გაცვლა</th><th class="num">გადახდილი</th><th class="num">გადასახდელი</th><th></th></tr></thead>
       <tbody>${list.map((r) => `
         <tr data-id="${r.id}" class="${r.active ? '' : 'inactive'}">
           <td><a href="#" data-action="open">${esc(r.name)}</a>${r.active ? '' : ' <span class="tag">არააქტიური</span>'}</td>
           <td>${esc(r.phone) || '—'}</td>
           <td class="num">${r.default_pct != null ? `${fmt(r.default_pct)}%` : '—'}</td>
           <td class="num">${gel(r.earned_month)}</td>
-          <td class="num">${gel(r.earned)}</td>
+          <td class="num">${gel(r.from_sales)}</td>
+          <td class="num ${r.from_returns < 0 ? 'loss' : r.from_returns > 0 ? 'profit' : 'muted'}">${r.from_returns > 0 ? '+' : ''}${gel(r.from_returns)}</td>
           <td class="num">${gel(r.paid)}</td>
           <td class="num"><b class="${r.owed > 0 ? 'loss' : ''}">${gel(r.owed)}</b></td>
           <td><div class="row-actions">
@@ -126,10 +127,15 @@ async function loadDetail() {
       <button class="sm danger" data-action="delete">წაშლა</button>
     </div>
     <div class="stats">
-      ${stat('სულ საკომისიო', gel(detail.earned))}
+      ${stat('საკომისიო გაყიდვებიდან', gel(detail.from_sales))}
+      ${stat('დაბრუნებების / გაცვლების გავლენა', `${detail.from_returns > 0 ? '+' : ''}${gel(detail.from_returns)}`, detail.from_returns < 0 ? 'bad' : detail.from_returns > 0 ? 'good' : '')}
       ${stat('გადახდილი', gel(detail.paid))}
-      ${stat('გადასახდელი', gel(detail.owed), detail.owed > 0 ? 'warn' : '')}
+      ${stat(detail.owed < 0 ? 'ხელოსანი გვმართებს' : 'გადასახდელი', gel(Math.abs(detail.owed)), detail.owed > 0 ? 'warn' : detail.owed < 0 ? 'bad' : '')}
     </div>
+    <p class="owed-formula">${gel(detail.from_sales)} <span class="muted">გაყიდვებიდან</span>
+      ${detail.from_returns < 0 ? '−' : '+'} ${gel(Math.abs(detail.from_returns))} <span class="muted">დაბრუნებები / გაცვლები</span>
+      − ${gel(detail.paid)} <span class="muted">გადახდილი</span>
+      = <b>${gel(detail.owed)}</b> <span class="muted">${detail.owed < 0 ? '(ხელოსანი გვმართებს)' : 'გადასახდელი'}</span></p>
 
     <h3>საკომისიო თვეების მიხედვით</h3>
     ${detail.months.length ? detail.months.map((m, i) => `
@@ -152,7 +158,7 @@ async function loadDetail() {
     <h3>დაბრუნებები და გაცვლები <span class="muted">(ამ ხელოსნის გამოგზავნილი მყიდველები)</span></h3>
     ${detail.cases.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>თარიღი</th><th>დაბრუნდა</th><th>სანაცვლოდ აიღო</th><th>ვისი მიზეზით</th><th class="num">საკომისიოზე გავლენა</th></tr></thead>
+        <thead><tr><th>თარიღი</th><th>დაბრუნდა</th><th>სანაცვლოდ აიღო</th><th>ვისი მიზეზით</th><th class="num">გადასახდელზე გავლენა</th></tr></thead>
         <tbody>${detail.cases.map((h) => `
           <tr><td>${dateLabel(h.date)}</td>
             <td>${h.returned.map((x) => `${esc(x.label)}${x.quantity > 1 ? ` ×${x.quantity}` : ''}${x.condition === 'damaged' ? ' <span class="tag bad">დაზ.</span>' : ''}`).join('<br>')}</td>
@@ -160,7 +166,7 @@ async function loadDetail() {
             <td>${RESPONSIBLE_SHORT[h.responsible ?? '']}${h.note ? `<span class="details">${esc(h.note)}</span>` : ''}</td>
             <td class="num">${commissionText(h)}</td></tr>`).join('')}
         </tbody></table></div>
-      <p class="hint">„არ ჩამოიჭრა / არ დაემატა“ ნიშნავს, რომ შემთხვევა ჩაწერილია, მაგრამ საკომისიო არ შეცვლილა.</p>`
+      <p class="hint">„არ ჩამოიჭრა / არ დაემატა“ ნიშნავს, რომ შემთხვევა ჩაწერილია, მაგრამ გადასახდელი არ შეცვლილა.</p>`
       : '<p class="hint">ამ ხელოსნის მყიდველებს ჯერ არაფერი დაუბრუნებიათ.</p>'}
 
     <h3>გადახდები</h3>

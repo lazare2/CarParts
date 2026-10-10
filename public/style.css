@@ -380,3 +380,6 @@ details.card[open] > summary { border-bottom: 1px solid var(--border); backgroun
 .ret-actions #ret-submit { padding: 9px 22px; font-size: 13.5px; }
 .ret-summary .dlg-error { margin-top: 10px; }
 .ret-history td { vertical-align: top; }
+.owed-line { font-size: 13px; }
+.owed-formula { background: var(--soft); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: -4px 0 14px; font-size: 13px; }
+.pending-warn { background: var(--amber-bg); border: 1px solid #fde68a; color: var(--amber); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-weight: 600; }

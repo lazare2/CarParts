@@ -7,6 +7,7 @@ import {
 let orders = [];      // GET /api/sales
 let lots = [];        // GET /api/lots (to know what was sold from which container)
 let history = [];     // GET /api/exchanges
+let owed = new Map(); // repairman id -> what we owe him now
 
 const fresh = () => ({
   mode: 'order', saleId: null, search: '',
@@ -26,7 +27,10 @@ const cur = () => (f.currency === 'USD' ? '$' : '₾');
 
 export async function showReturns() {
   if (!visible('returns')) return;
-  [orders, lots, history] = await Promise.all([api('GET', '/api/sales'), api('GET', '/api/lots'), api('GET', '/api/exchanges')]);
+  let refs;
+  [orders, lots, history, refs] = await Promise.all([api('GET', '/api/sales'), api('GET', '/api/lots'), api('GET', '/api/exchanges'),
+    api('GET', '/api/referrers')]);
+  owed = new Map(refs.map((r) => [r.id, r.owed]));
   if (f.saleId && !sale()) f.saleId = null;
   renderForm();
   renderHistory();
@@ -203,13 +207,34 @@ function newPart() {
 
 // ---------- numbers ----------
 
+function pendingNew() {
+  const box = $('#new-add');
+  if (!box) return null;
+  const partId = Number($('.na-part', box).value);
+  const [lotId, cond] = $('.na-src', box).value.split('|');
+  const qty = Number($('.na-qty', box).value);
+  const price = $('.na-price', box).value;
+  return partId && lotId && qty >= 1 && price !== '' ? { part_id: partId, lot_id: Number(lotId), damaged: cond === 'd', qty, price: Number(price) } : null;
+}
+
+function pendingLoose() {
+  const box = $('#loose-add');
+  if (!box || f.mode !== 'loose') return null;
+  const partId = Number($('.la-part', box).value);
+  const lotId = Number($('.la-lot', box).value);
+  const qty = Number($('.la-qty', box).value);
+  const credit = $('.la-credit', box).value;
+  return partId && lotId && qty >= 1 && credit !== '' ? { part_id: partId, lot_id: lotId, qty, condition: $('.la-cond', box).value, credit: Number(credit) } : null;
+}
+const allNew = () => [...f.newItems, ...(pendingNew() ? [pendingNew()] : [])];
+
 function returnedLines() {
   if (f.mode === 'order') {
     const s = sale();
     if (!s) return [];
     return s.items.filter((i) => (f.lines[i.id]?.qty ?? 0) > 0).map((i) => ({ item: i, ...f.lines[i.id] }));
   }
-  return f.loose;
+  return [...f.loose, ...(pendingLoose() ? [pendingLoose()] : [])];
 }
 
 function referrer() {
@@ -226,41 +251,89 @@ function autoPct(lines) {
   return referrer()?.default_pct ?? 0;
 }
 
+// what the repairman box suggests: depends on whose fault it was and whether the commission was already paid
+function commissionPlan(lines, freshTotal, credit) {
+  const ref = referrer();
+  if (!ref) return null;
+  const pct = f.pctTouched ? Number(f.pct) || 0 : autoPct(lines);
+  const delta = Math.round((pct / 100) * (freshTotal - credit) * 100) / 100;
+  const balance = owed.get(ref.id) ?? 0;
+  const ourFault = f.responsible === 'us';
+  const offered = delta > 0 || (delta < 0 && !ourFault);
+  // already paid out: from the order lines (payments matched oldest first); without an order, from the balance
+  let alreadyPaid = 0;
+  if (delta < 0) {
+    if (f.mode === 'order') {
+      const atStake = lines.reduce((s, l) => s + (l.item.commission_gel * l.qty) / l.item.quantity, 0);
+      // the paid commission belongs to the units the customer still has (earlier returns already settled theirs)
+      const paid = lines.reduce((s, l) => s + (l.item.commission_paid_gel * l.qty) / Math.max(1, l.item.quantity - l.item.returned_qty), 0);
+      alreadyPaid = atStake > 0 ? Math.min(-delta, (-delta * paid) / atStake) : 0;
+    } else alreadyPaid = -delta - Math.min(-delta, Math.max(balance, 0));
+    alreadyPaid = Math.round(alreadyPaid * 100) / 100;
+  }
+  // not paid yet -> simply deduct/add on what we owe (ticked); already paid -> asking money back (not ticked)
+  const suggested = delta > 0 || (delta < 0 && alreadyPaid === 0);
+  const apply = offered && (f.apply ?? suggested);
+  return { ref, pct, delta, balance, ourFault, offered, alreadyPaid, apply };
+}
+
 function renderSummary() {
   const lines = returnedLines();
+  const extra = allNew();
   const credit = lines.reduce((s, l) => s + toGel(l.credit), 0);
-  const fresh = f.newItems.reduce((s, n) => s + toGel(n.price), 0);
-  const cash = Math.round((fresh - credit) * 100) / 100;
-  const ref = referrer();
-  const pct = f.pctTouched ? Number(f.pct) || 0 : autoPct(lines);
-  const delta = ref ? Math.round((pct / 100) * (fresh - credit) * 100) / 100 : 0;
-  const apply = f.apply ?? delta > 0;
+  const freshTotal = extra.reduce((s, n) => s + toGel(n.price), 0);
+  const cash = Math.round((freshTotal - credit) * 100) / 100;
+  const plan = commissionPlan(lines, freshTotal, credit);
+  const pending = [pendingNew() && 'ახალი ნაწილი', pendingLoose() && 'დაბრუნებული ნაწილი'].filter(Boolean);
+
+  let refBox = '';
+  if (plan) {
+    const { ref, pct, delta, balance, ourFault, offered, alreadyPaid, apply } = plan;
+    const after = Math.round((balance + (apply ? delta : 0)) * 100) / 100;
+    let text;
+    let check = '';
+    if (delta === 0) text = '<div class="muted">საკომისიო არ იცვლება.</div>';
+    else if (!offered) text = `<div>ნაწილი დაზიანებული იყო — ეს <b>ჩვენი ბრალია</b>, ამიტომ ხელოსნის საკომისიო არ ჩამოიჭრება
+      <span class="muted">(ჩაიწერება, რომ ${gel(-delta)} შეიძლებოდა ჩამოჭრილიყო)</span>.</div>`;
+    else if (delta > 0) {
+      text = `<div>ძვირი ნაწილი აიღო: ხელოსნის საკომისიო იზრდება <b class="profit">+${gel(delta)}</b></div>`;
+      check = `დავამატოთ ხელოსნის გადასახდელს ${gel(delta)}`;
+    } else if (alreadyPaid === 0) {
+      text = `<div>${f.mode === 'order' ? 'ამ შეკვეთის' : 'ეს'} საკომისიო ჯერ <b>არ არის გადახდილი</b>: გადასახდელი მცირდება <b class="loss">${gel(delta)}</b></div>`;
+      check = `გამოვაკლოთ ხელოსნის გადასახდელს ${gel(-delta)}`;
+    } else {
+      text = `<div>საკომისიო მცირდება <b class="loss">${gel(delta)}</b>, მაგრამ ${alreadyPaid >= -delta ? 'ის' : `აქედან ${gel(alreadyPaid)}`}
+        <b>უკვე გადახდილია</b> ხელოსნისთვის.</div>`;
+      check = `ჩამოვაჭრათ ხელოსანს ${gel(-delta)} — ${after < 0 ? `ხელოსანი დაგვმართებს ${gel(-after)}` : 'გამოაკლდება შემდეგ გადახდას'}`;
+    }
+    refBox = `
+      <div class="ref-box">
+        <div>ხელოსანი: <b>${esc(ref.name)}</b> · საკომისიო
+          <input id="ret-pct" type="number" min="0" max="100" step="0.1" value="${f.pctTouched ? esc(f.pct) : pct}" title="%">%</div>
+        ${text}
+        ${check ? `<label class="check"><input type="checkbox" id="ret-apply" ${apply ? 'checked' : ''}> ${check}</label>` : ''}
+        <div class="owed-line">ხელოსანს ახლა ვუხდით: <b>${gel(balance)}</b>
+          ${delta !== 0 ? `→ ჩაწერის შემდეგ: <b class="${after < 0 ? 'loss' : ''}">${after < 0 ? `ხელოსანი გვმართებს ${gel(-after)}` : gel(after)}</b>` : ''}</div>
+        <p class="hint">ეს შემთხვევა ხელოსნის გვერდზე ჩაიწერება ნებისმიერ შემთხვევაში — მონიშნულია თუ არა.</p>
+      </div>`;
+  }
 
   $('#ret-summary').innerHTML = `
+    ${pending.length ? `<div class="pending-warn">შევსებულია, მაგრამ „+ დამატება“ არ არის დაჭერილი: ${pending.join(', ')}. ჩაწერისას ავტომატურად დაემატება.</div>` : ''}
     <div class="sum-grid">
       <div><span>დაბრუნებული ნაწილები</span><b>${gel(credit)}</b></div>
-      <div><span>სანაცვლოდ აღებული</span><b>${gel(fresh)}</b></div>
+      <div><span>სანაცვლოდ აღებული</span><b>${gel(freshTotal)}</b></div>
       <div class="sum-result ${cash < 0 ? 'pay-out' : cash > 0 ? 'pay-in' : ''}">
         ${cash < 0 ? `<span>მყიდველს დაუბრუნეთ</span><b>${gel(-cash)}</b>`
           : cash > 0 ? `<span>მყიდველმა უნდა გადაიხადოს</span><b>${gel(cash)}</b>`
           : `<span>სხვაობა</span><b>${lines.length ? 'თანაბარია' : '—'}</b>`}
       </div>
     </div>
-    ${ref ? `
-      <div class="ref-box">
-        <div>ხელოსანი: <b>${esc(ref.name)}</b> · საკომისიო
-          <input id="ret-pct" type="number" min="0" max="100" step="0.1" value="${f.pctTouched ? esc(f.pct) : pct}" title="%">%</div>
-        ${delta === 0 ? '<div class="muted">საკომისიო არ იცვლება.</div>' : `
-          <div>${delta < 0 ? `საკომისიო ამ დაბრუნებით მცირდება: <b class="loss">${gel(delta)}</b>`
-            : `ძვირი ნაწილი: ხელოსანს ეკუთვნის დამატებით <b class="profit">+${gel(delta)}</b>`}</div>
-          <label class="check"><input type="checkbox" id="ret-apply" ${apply ? 'checked' : ''}>
-            ${delta < 0 ? `ჩამოვაჭრათ ხელოსანს ${gel(-delta)}` : `დავამატოთ ხელოსანს ${gel(delta)} საკომისიო`}</label>`}
-        <p class="hint">ეს შემთხვევა ხელოსნის გვერდზე ჩაიწერება ნებისმიერ შემთხვევაში — მონიშნულია თუ არა.</p>
-      </div>` : ''}
+    ${refBox}
     <p class="dlg-error" id="ret-error" hidden></p>
     <div class="ret-actions">
       <button class="secondary" id="ret-reset">გასუფთავება</button>
-      <button id="ret-submit" ${lines.length ? '' : 'disabled'}>${f.newItems.length ? 'გაცვლის ჩაწერა' : 'დაბრუნების ჩაწერა'}</button>
+      <button id="ret-submit" ${lines.length ? '' : 'disabled'}>${extra.length ? 'გაცვლის ჩაწერა' : 'დაბრუნების ჩაწერა'}</button>
     </div>`;
 }
 
@@ -319,8 +392,10 @@ $('#ret-form').addEventListener('change', (e) => {
   if (row && t.classList.contains('r-cond')) {
     const item = sale().items.find((i) => i.id === Number(row.dataset.item));
     (f.lines[item.id] ??= { qty: 0, condition: 'good', credit: '', creditTouched: false }).condition = t.value;
+    suggestOurFault(t.value);
   }
-  if (t.name === 'responsible') f.responsible = t.value;
+  if (t.classList.contains('la-cond')) suggestOurFault(t.value);
+  if (t.name === 'responsible') { f.responsible = t.value; f.apply = null; }
   if (t.id === 'ret-apply') f.apply = t.checked;
   if (t.id === 'ret-currency') { f.currency = t.value; recomputeCredits(); return renderForm(); }
   if (t.id === 'loose-ref') { f.referrerId = t.value; f.pctTouched = false; f.apply = null; }
@@ -343,6 +418,14 @@ $('#ret-form').addEventListener('change', (e) => {
   }
   renderSummary();
 });
+
+function suggestOurFault(condition) {
+  if (condition !== 'damaged' || f.responsible) return;
+  f.responsible = 'us';
+  f.apply = null;
+  const radio = $('#ret-responsible input[value="us"]');
+  if (radio) radio.checked = true;
+}
 
 function recomputeCredits() {
   const s = sale();
@@ -374,6 +457,7 @@ function addLoose() {
   if (!(qty >= 1)) return showMessage('მიუთითეთ რაოდენობა', false);
   if (credit === '') return showMessage('მიუთითეთ, რა თანხა ერიცხება მყიდველს (შეიძლება 0)', false);
   f.loose.push({ part_id: partId, lot_id: lotId, qty, condition: $('.la-cond', box).value, credit: Number(credit) });
+  if ($('.la-cond', box).value === 'damaged') suggestOurFault('damaged');
   renderForm();
 }
 
@@ -391,17 +475,19 @@ function addNew() {
 }
 
 async function submit() {
-  const lines = returnedLines();
-  const ref = referrer();
+  const pn = pendingNew();
+  const pl = pendingLoose();
+  if (pn) f.newItems.push(pn);
+  if (pl) f.loose.push(pl);
+  const lines = f.mode === 'order' ? returnedLines() : f.loose;
   const credit = lines.reduce((s, l) => s + toGel(l.credit), 0);
   const freshTotal = f.newItems.reduce((s, n) => s + toGel(n.price), 0);
-  const pct = f.pctTouched ? Number(f.pct) || 0 : autoPct(lines);
-  const delta = ref ? (pct / 100) * (freshTotal - credit) : 0;
+  const plan = commissionPlan(lines, freshTotal, credit);
   const body = {
     date: f.date, currency: f.currency, rate: f.currency === 'USD' ? f.rate : null, responsible: f.responsible, note: f.note,
     referrer_id: f.mode === 'loose' ? f.referrerId || null : null,
     commission_pct: f.pctTouched ? f.pct : '',
-    apply_commission: f.apply ?? delta > 0,
+    apply_commission: !!plan?.apply,
     returned: lines.map((l) => (f.mode === 'order'
       ? { sale_item_id: l.item.id, quantity: l.qty, condition: l.condition, credit: l.credit }
       : { lot_id: l.lot_id, quantity: l.qty, condition: l.condition, credit: l.credit })),
@@ -417,6 +503,8 @@ async function submit() {
     showMessage(result.cash_gel < 0 ? `ჩაიწერა. მყიდველს დაუბრუნეთ ${gel(-result.cash_gel)}`
       : result.cash_gel > 0 ? `ჩაიწერა. მყიდველმა გადაიხადოს ${gel(result.cash_gel)}` : 'ჩაიწერა. სხვაობა არ არის.');
   } catch (err) {
+    if (pn) f.newItems.pop();
+    if (pl) f.loose.pop();
     $('#ret-error').textContent = err.message;
     $('#ret-error').hidden = false;
     button.disabled = false;
@@ -445,11 +533,16 @@ function renderHistory() {
 }
 
 export function commissionText(h) {
-  if (!h.referrer || !h.commission_delta_gel) return '<span class="muted">—</span>';
-  const amount = `${h.commission_delta_gel > 0 ? '+' : '−'}${gel(Math.abs(h.commission_delta_gel))}`;
-  return h.commission_applied
-    ? `<b class="${h.commission_delta_gel > 0 ? 'profit' : 'loss'}">${amount}</b><span class="details">${h.commission_delta_gel > 0 ? 'დაემატა' : 'ჩამოიჭრა'}</span>`
-    : `<span class="muted">${amount}</span><span class="details">არ ${h.commission_delta_gel > 0 ? 'დაემატა' : 'ჩამოიჭრა'}</span>`;
+  const d = h.commission_delta_gel;
+  if (!h.referrer || !d) return '<span class="muted">—</span>';
+  const amount = `${d > 0 ? '+' : '−'}${gel(Math.abs(d))}`;
+  if (d < 0 && h.responsible === 'us' && !h.commission_applied)
+    return `<span class="muted">${amount}</span><span class="details">ჩვენი ბრალი — არ ჩამოიჭრა</span>`;
+  const paidBefore = d < 0 && h.owed_before_gel != null && h.owed_before_gel < -d;
+  if (h.commission_applied)
+    return `<b class="${d > 0 ? 'profit' : 'loss'}">${amount}</b><span class="details">${d > 0 ? 'დაემატა გადასახდელს'
+      : paidBefore ? 'ჩამოიჭრა (უკვე გადახდილიდან)' : 'გამოაკლდა გადასახდელს'}</span>`;
+  return `<span class="muted">${amount}</span><span class="details">${d > 0 ? 'არ დაემატა' : 'არ ჩამოიჭრა'}</span>`;
 }
 
 $('#ret-history').addEventListener('click', (e) => {

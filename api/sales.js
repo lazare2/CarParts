@@ -42,9 +42,32 @@ route('POST', '/api/sales', (body) => {
   });
 });
 
+// How much of each order line's commission is already paid to the repairman: payments are matched
+// to commissions oldest first (a take-back without a known order counts like money paid back).
+function paidCommission() {
+  const capacity = new Map();
+  for (const p of db.prepare('SELECT referrer_id, SUM(amount_gel) AS paid FROM referrer_payments GROUP BY referrer_id').all())
+    capacity.set(p.referrer_id, p.paid);
+  for (const r of db.prepare(`SELECT referrer_id, SUM(commission_back_gel) AS back FROM returns
+      WHERE sale_item_id IS NULL AND referrer_id IS NOT NULL GROUP BY referrer_id`).all())
+    capacity.set(r.referrer_id, (capacity.get(r.referrer_id) ?? 0) + r.back);
+  const paid = new Map();
+  for (const it of db.prepare(`
+      SELECT si.id, s.referrer_id, si.commission_gel - COALESCE((SELECT SUM(commission_back_gel) FROM returns WHERE sale_item_id = si.id), 0) AS net
+      FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.referrer_id IS NOT NULL
+      ORDER BY s.date, s.id, si.id`).all()) {
+    const left = capacity.get(it.referrer_id) ?? 0;
+    const p = Math.max(0, Math.min(it.net, left));
+    capacity.set(it.referrer_id, left - p);
+    paid.set(it.id, round2(p));
+  }
+  return paid;
+}
+
 // every order with its parts and what can still be returned (for the returns page), newest first
 route('GET', '/api/sales', () => {
   const info = partInfo();
+  const commissionPaid = paidCommission();
   const returned = new Map(db.prepare(`SELECT sale_item_id, SUM(quantity) AS qty, SUM(refund_gel) AS refund
     FROM returns WHERE sale_item_id IS NOT NULL GROUP BY sale_item_id`).all().map((r) => [r.sale_item_id, r]));
   const sales = new Map();
@@ -62,7 +85,7 @@ route('GET', '/api/sales', () => {
     sale.items.push({
       id: row.id, lot_id: row.lot_id, part_id: row.part_id, label: info.get(row.part_id).label, container: row.container,
       quantity: row.quantity, damaged: !!row.damaged, price_gel: row.price_gel,
-      commission_pct: row.commission_pct, commission_gel: row.commission_gel,
+      commission_pct: row.commission_pct, commission_gel: row.commission_gel, commission_paid_gel: commissionPaid.get(row.id) ?? 0,
       returned_qty: ret?.qty ?? 0, refunded_gel: round2(ret?.refund ?? 0),
     });
     sale.total = round2(sale.total + row.price_gel);

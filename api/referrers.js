@@ -25,6 +25,18 @@ function commissionEntries(referrerId = null) {
   return [...sales, ...returns];
 }
 
+// commission from normal sales, the effect of returns/exchanges (+ extra / - taken back), payments
+function balance(entries, payments) {
+  const sales = entries.filter((e) => e.kind === 'sale' && !e.exchange_id).reduce((s, e) => s + e.amount, 0);
+  const adjust = entries.filter((e) => e.kind === 'return' || e.exchange_id).reduce((s, e) => s + e.amount, 0);
+  const paid = payments.reduce((s, p) => s + p.amount_gel, 0);
+  return { from_sales: round2(sales), from_returns: round2(adjust), paid: round2(paid), owed: round2(sales + adjust - paid) };
+}
+
+export function owedTo(referrerId) {
+  return balance(commissionEntries(referrerId), paymentsOf(referrerId)).owed;
+}
+
 function paymentsOf(referrerId = null) {
   return referrerId
     ? db.prepare('SELECT * FROM referrer_payments WHERE referrer_id = ? ORDER BY date DESC, id DESC').all(referrerId)
@@ -54,13 +66,16 @@ route('GET', '/api/referrers', () => {
   const paid = new Map();
   for (const p of paymentsOf()) paid.set(p.referrer_id, (paid.get(p.referrer_id) ?? 0) + p.amount_gel);
 
+  const all = commissionEntries();
+  const allPayments = paymentsOf();
   return db.prepare('SELECT * FROM referrers ORDER BY active DESC, name COLLATE NOCASE').all().map((r) => {
+    const b = balance(all.filter((e) => e.referrer_id === r.id), allPayments.filter((p) => p.referrer_id === r.id));
     const t = earned.get(r.id) ?? { total: 0, month: 0, sales: 0, customers: new Set() };
     const p = paid.get(r.id) ?? 0;
     return {
       ...r,
       earned: round2(t.total), earned_month: round2(t.month), sales_total: round2(t.sales), visits: t.customers.size,
-      paid: round2(p), owed: round2(t.total - p),
+      paid: round2(p), owed: round2(t.total - p), from_sales: b.from_sales, from_returns: b.from_returns,
     };
   });
 });
@@ -81,11 +96,14 @@ route('GET', '/api/referrers/:id', (body, id) => {
   }
   const payments = paymentsOf(id);
   const paid = payments.reduce((sum, p) => sum + p.amount_gel, 0);
+  const b = balance(commissionEntries(id), payments);
   return {
     referrer,
     earned: round2(earned),
     paid: round2(paid),
     owed: round2(earned - paid),
+    from_sales: b.from_sales,
+    from_returns: b.from_returns,
     months: [...months.values()]
       .map((m) => ({
         ...m, earned: round2(m.earned), sales: round2(m.sales),

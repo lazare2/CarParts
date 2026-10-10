@@ -209,7 +209,8 @@ db.exec(`
     commission_pct       REAL NOT NULL DEFAULT 0,
     commission_delta_gel REAL NOT NULL DEFAULT 0,               -- how the repairman's commission would change
     commission_applied   INTEGER NOT NULL DEFAULT 0 CHECK (commission_applied IN (0, 1)),
-    note                 TEXT NOT NULL DEFAULT ''
+    note                 TEXT NOT NULL DEFAULT '',
+    owed_before_gel      REAL                                   -- what we owed the repairman just before
   );
 
   CREATE TABLE IF NOT EXISTS returns (
@@ -314,6 +315,7 @@ function migrateReturns() {
 
 db.exec('DROP VIEW IF EXISTS lot_stats');
 if (!columnsOf('returns').includes('lot_id')) migrateReturns();
+if (!columnsOf('exchanges').includes('owed_before_gel')) db.exec('ALTER TABLE exchanges ADD COLUMN owed_before_gel REAL');
 if (!columnsOf('sales').includes('exchange_id')) db.exec('ALTER TABLE sales ADD COLUMN exchange_id INTEGER REFERENCES exchanges(id)');
 
 db.exec(`

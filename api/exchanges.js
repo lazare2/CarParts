@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { route } from './router.js';
 import { addEvent } from './containers.js';
 import { addSaleItems } from './sales.js';
+import { owedTo } from './referrers.js';
 import {
   HttpError, round2, today, transaction, insertId, textIn, dateIn, currencyIn, amountIn, pctIn, posInt, toGel,
   getReferrer, getLot, must, partInfo,
@@ -85,13 +86,16 @@ route('POST', '/api/exchanges', (body) => {
   const newGel = round2(newItems.reduce((s, n) => s + toGel(amountIn(n.price, 'ახალი ნაწილის ფასი'), rate), 0));
   // what the commission would change by: + more for a pricier part, - take back for a cheaper one / a plain return
   const delta = referrer ? round2((pct / 100) * (newGel - creditGel)) : 0;
-  const applied = referrer && delta !== 0 && !!body.apply_commission ? 1 : 0;
+  // the part was damaged = our fault: the repairman's commission is never taken back for it
+  const allowed = delta > 0 || (delta < 0 && responsible !== 'us');
+  const applied = referrer && allowed && !!body.apply_commission ? 1 : 0;
+  const owedBefore = referrer ? owedTo(referrer.id) : null;
 
   return transaction(() => {
     const exchangeId = insertId(`INSERT INTO exchanges (date, sale_id, referrer_id, responsible, currency, rate, credit_gel, new_gel,
-      cash_gel, commission_pct, commission_delta_gel, commission_applied, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cash_gel, commission_pct, commission_delta_gel, commission_applied, note, owed_before_gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [date, sale?.id ?? null, referrer?.id ?? null, responsible, currency, rate, creditGel, newGel, round2(newGel - creditGel),
-      pct, delta, applied, textIn(body.note)]);
+      pct, delta, applied, textIn(body.note), owedBefore]);
 
     const returnIds = lines.map((l) => {
       db.prepare(`UPDATE lots SET ${l.condition === 'good' ? 'good = good' : 'damaged = damaged'} + ? WHERE id = ?`).run(l.quantity, l.lot_id);
@@ -120,7 +124,7 @@ route('POST', '/api/exchanges', (body) => {
       spread(delta, items, (it) => it.price_gel).forEach((c, i) =>
         db.prepare('UPDATE sale_items SET commission_gel = ?, commission_pct = ? WHERE id = ?').run(c, pct, items[i].id));
     }
-    return { id: exchangeId, cash_gel: round2(newGel - creditGel), commission_delta: delta };
+    return { id: exchangeId, cash_gel: round2(newGel - creditGel), commission_delta: delta, commission_applied: applied };
   });
 });
 
